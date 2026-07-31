@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: "Inter", sans-serif;
+}
+
+.font-display {
+  font-family: "Sora", sans-serif;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 99px;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #2a3f63;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #eceff3 25%, #f6f7f9 37%, #eceff3 63%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, #132646 25%, #1a3057 37%, #132646 63%);
+  background-size: 400px 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: #f8f9fa;
+}
