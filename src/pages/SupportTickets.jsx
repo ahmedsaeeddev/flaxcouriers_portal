@@ -9,7 +9,15 @@ import { AppContext } from "../context/AppContext";
 import { inputCls } from "../lib/constants";
 
 export default function SupportTickets() {
-  const { tickets, addTicket, updateTicketStatus, settings } = useContext(AppContext);
+  const {
+    tickets,
+    addTicket,
+    updateTicketStatus,
+    settings,
+    userRole,
+    currentUser,
+    currentShipper,
+  } = useContext(AppContext);
   const [searchValue, setSearchValue] = useState("");
   const [showModal, setShowModal] = useState(false);
 
@@ -20,7 +28,20 @@ export default function SupportTickets() {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [replyText, setReplyText] = useState("");
 
-  const filteredTickets = tickets.filter((r) => {
+  const visibleTickets = userRole === "admin"
+    ? tickets
+    : tickets.filter((ticket) => {
+        const userEmail = (currentUser?.email || "").toLowerCase();
+        const ticketEmail = (ticket.customerEmail || "").toLowerCase();
+        const userAccount = currentShipper?.accNum || "";
+        return (
+          (currentUser?.uid && ticket.customerUid === currentUser.uid) ||
+          (userEmail && ticketEmail === userEmail) ||
+          (userAccount && ticket.customerAccNum === userAccount)
+        );
+      });
+
+  const filteredTickets = visibleTickets.filter((r) => {
     const searchLower = searchValue.toLowerCase();
     return (
       (r.id && r.id.toLowerCase().includes(searchLower)) ||
@@ -163,18 +184,20 @@ export default function SupportTickets() {
                   rows={2}
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Type support response..."
+                  placeholder={userRole === "admin" ? "Type support response..." : "Reply to support..."}
                   className="w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-[#F4C430]/20"
                 />
                 <div className="flex justify-between items-center">
-                  <button
-                    onClick={() => handleMarkResolved(selectedTicket.id)}
-                    className="text-xs font-semibold text-emerald-700 flex items-center gap-1 hover:underline"
-                  >
-                    <CheckCircle size={14} /> Mark as Resolved
-                  </button>
-                  <Button onClick={handleSendReply} disabled={!replyText}>
-                    Send Reply
+                  {userRole === "admin" ? (
+                    <button
+                      onClick={() => handleMarkResolved(selectedTicket.id)}
+                      className="text-xs font-semibold text-emerald-700 flex items-center gap-1 hover:underline"
+                    >
+                      <CheckCircle size={14} /> Mark as Resolved
+                    </button>
+                  ) : <span />}
+                  <Button onClick={handleSendReply} disabled={!replyText.trim()}>
+                    {userRole === "admin" ? "Send Reply" : "Send to Support"}
                   </Button>
                 </div>
               </div>

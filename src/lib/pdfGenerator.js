@@ -1,6 +1,11 @@
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
+import {
+  ACTIVE_SHIPMENT_STATUSES,
+  FAILED_DELIVERY_STATUSES,
+  RETURN_SHIPMENT_STATUSES,
+} from "./constants";
 
 // ─── Real Scannable Barcode DataURL Generator (JsBarcode) ─────────────────────
 function getBarcodeDataURL(text) {
@@ -616,6 +621,169 @@ export function generateInvoicePDF(invoice, settings = {}) {
   doc.save(`Invoice_${invoice.id}.pdf`);
 }
 
+export function generateShipmentInvoicePDF(invoiceRequest, settings = {}) {
+  const { date, shipments = [], shipperName = "Shipper", shipperAccount = "" } = invoiceRequest;
+  const doc = new jsPDF();
+  const companyName = settings.companyName || "Flax Couriers";
+  const invoiceDate = new Date(`${date}T00:00:00`).toLocaleDateString();
+  const invoiceNumber = `INV-${String(date).replace(/-/g, "")}-${shipperAccount || "SHIPPER"}`;
+  const statusCounts = shipments.reduce((counts, shipment) => {
+    const status = String(shipment.status || "Unknown").trim();
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+
+  doc.setTextColor(10, 35, 66);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text(companyName.toUpperCase(), 15, 20);
+  doc.setFontSize(12);
+  doc.text("SHIPMENT INVOICE", 15, 30);
+  doc.setDrawColor(220, 225, 230);
+  doc.line(15, 36, 195, 36);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Invoice #: ${invoiceNumber}`, 15, 46);
+  doc.text(`Booking date: ${invoiceDate}`, 15, 53);
+  doc.text(`Shipper: ${shipperName}${shipperAccount ? ` (#${shipperAccount})` : ""}`, 15, 60);
+  doc.text(`Total parcels: ${shipments.length}`, 15, 67);
+
+  let y = 78;
+  doc.setFont("helvetica", "bold");
+  doc.text("STATUS SUMMARY", 15, y);
+  y += 7;
+  doc.setFont("helvetica", "normal");
+  Object.entries(statusCounts).forEach(([status, count], index) => {
+    const x = index % 2 === 0 ? 15 : 108;
+    const rowY = y + Math.floor(index / 2) * 7;
+    doc.text(`${status}: ${count}`, x, rowY);
+  });
+  y += Math.ceil(Object.keys(statusCounts).length / 2) * 7 + 7;
+
+  const drawTableHeader = () => {
+    doc.setFillColor(240, 244, 248);
+    doc.rect(15, y - 5, 180, 9, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("Tracking ID", 17, y);
+    doc.text("Consignee", 55, y);
+    doc.text("City", 105, y);
+    doc.text("Status", 132, y);
+    doc.text("COD", 178, y);
+    doc.setFont("helvetica", "normal");
+    y += 9;
+  };
+
+  drawTableHeader();
+  shipments.forEach((shipment) => {
+    if (y > 280) {
+      doc.addPage();
+      y = 20;
+      drawTableHeader();
+    }
+
+    doc.setFontSize(8);
+    doc.text(String(shipment.id || "-").slice(0, 20), 17, y);
+    doc.text(String(shipment.cust || "-").slice(0, 26), 55, y);
+    doc.text(String(shipment.city || "-").slice(0, 14), 105, y);
+    doc.text(String(shipment.status || "Unknown").slice(0, 22), 132, y);
+    doc.text(String(shipment.cod || "Rs 0").slice(0, 16), 178, y);
+    y += 7;
+  });
+
+  const fileShipper = String(shipperAccount || shipperName)
+    .replace(/[^\w-]/g, "_");
+  doc.save(`Invoice_${date}_${fileShipper}.pdf`);
+}
+
+export function generateDeliverySheetPDF(sheet = {}, settings = {}) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const companyName = settings.companyName || "Flax Couriers";
+  const parcels = sheet.parcels || [];
+  const width = doc.internal.pageSize.getWidth();
+  const left = 12;
+  const right = width - 12;
+  const parseAmount = (value) => Number(String(value || 0).replace(/[^\d.-]/g, "")) || 0;
+  const totalCOD = parcels.reduce((sum, parcel) => sum + (Number(parcel.codAmount) || parseAmount(parcel.cod)), 0);
+  const deliveredCOD = parcels.reduce((sum, parcel) => {
+    if (parcel.status === "Delivered") return sum + (Number(parcel.codAmount) || 0);
+    if (parcel.status === "Partial Delivery") return sum + (Number(parcel.receivedAmount) || 0);
+    return sum;
+  }, 0);
+  const balance = Number.isFinite(Number(sheet.balance))
+    ? Number(sheet.balance)
+    : deliveredCOD - Number(sheet.totalReceivedAmount || 0) - Number(sheet.totalFuelCharges || 0);
+
+  doc.setFillColor(10, 35, 66);
+  doc.rect(0, 0, width, 30, "F");
+  doc.setTextColor(244, 196, 48);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text(companyName.toUpperCase(), left, 13);
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(11);
+  doc.text(`DELIVERY SHEET · ${sheet.id || "UNSAVED"}`, left, 22);
+  doc.setTextColor(10, 35, 66);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(`Rider: ${sheet.riderName || "—"}  |  Phone: ${sheet.riderPhone || "—"}`, left, 39);
+  doc.text(`Branch: ${sheet.branch || "—"}  |  Origin: ${sheet.origin || "—"}  |  Area: ${sheet.area || "—"}`, left, 46);
+  doc.text(`Date: ${sheet.date || "—"}  ${sheet.time || ""}  |  Sheet status: ${sheet.status || "Open"}`, left, 53);
+  doc.text(`Parcels: ${parcels.length}  |  Total COD: Rs ${totalCOD.toLocaleString()}  |  Fuel: Rs ${Number(sheet.totalFuelCharges || 0).toLocaleString()}  |  Received: Rs ${Number(sheet.totalReceivedAmount || 0).toLocaleString()}`, left, 60);
+  doc.text(`Balance: Rs ${balance.toLocaleString()}`, left, 66);
+
+  const columns = [
+    { title: "CN #", x: 13, width: 31 },
+    { title: "Consignee", x: 45, width: 39 },
+    { title: "Phone / City", x: 85, width: 35 },
+    { title: "Status", x: 121, width: 41 },
+    { title: "Payment", x: 163, width: 22 },
+    { title: "COD", x: 186, width: 19 },
+    { title: "Received", x: 206, width: 22 },
+    { title: "Reason", x: 229, width: 55 },
+  ];
+  let y = 77;
+  const drawHeader = () => {
+    doc.setFillColor(240, 244, 248);
+    doc.rect(left, y - 5, right - left, 9, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    columns.forEach((column) => doc.text(column.title, column.x, y));
+    doc.setFont("helvetica", "normal");
+    y += 9;
+  };
+  drawHeader();
+
+  parcels.forEach((parcel) => {
+    if (y > 190) {
+      doc.addPage();
+      y = 20;
+      drawHeader();
+    }
+    const values = [
+      parcel.trackingId || parcel.shipmentId || "—",
+      parcel.cust || "Consignee",
+      [parcel.receiverPhone, parcel.city].filter(Boolean).join(" / ") || "—",
+      parcel.status || "Out for Delivery",
+      parcel.paymentStatus || "Unpaid",
+      `Rs ${Number(parcel.codAmount || parseAmount(parcel.cod)).toLocaleString()}`,
+      `Rs ${Number(parcel.receivedAmount || 0).toLocaleString()}`,
+      parcel.reason || "—",
+    ];
+    doc.setFontSize(7);
+    values.forEach((value, index) => {
+      doc.text(String(value).slice(0, index === 7 ? 35 : 26), columns[index].x, y);
+    });
+    doc.setDrawColor(230, 234, 239);
+    doc.line(left, y + 3, right, y + 3);
+    y += 8;
+  });
+
+  const safeId = String(sheet.id || "Delivery_Sheet").replace(/[^\w-]/g, "_");
+  doc.save(`${safeId}.pdf`);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. COD STATEMENT PDF
 // ─────────────────────────────────────────────────────────────────────────────
@@ -692,8 +860,10 @@ export function generateReportPDF(reportType, shipments = [], settings = {}) {
   // Calculate Summary Metrics
   const totalVolume = shipments.length;
   const deliveredCount = shipments.filter((s) => s.status === "Delivered").length;
-  const inTransitCount = shipments.filter((s) => s.status === "In Transit" || s.status === "Out for Delivery").length;
-  const returnedCount = shipments.filter((s) => s.status === "Returned").length;
+  const inTransitCount = shipments.filter(
+    (s) => ACTIVE_SHIPMENT_STATUSES.includes(s.status) && !RETURN_SHIPMENT_STATUSES.includes(s.status)
+  ).length;
+  const returnedCount = shipments.filter((s) => RETURN_SHIPMENT_STATUSES.includes(s.status)).length;
   let totalCodVal = 0;
   shipments.forEach((s) => {
     totalCodVal += parseInt((s.cod || "0").replace(/[^\d]/g, "")) || 0;
@@ -901,10 +1071,10 @@ export function generateReportPDF(reportType, shipments = [], settings = {}) {
         doc.text(s.cod || "Rs 0", M + 116, Y + 4.5);
 
         // Status coloring
-        const st = s.status || "Pending Pickup";
+        const st = s.status || "Booked";
         if (st === "Delivered") doc.setTextColor(22, 163, 74);
-        else if (st === "In Transit" || st === "Out for Delivery") doc.setTextColor(217, 119, 6);
-        else if (st === "Returned") doc.setTextColor(220, 38, 38);
+        else if (ACTIVE_SHIPMENT_STATUSES.includes(st)) doc.setTextColor(217, 119, 6);
+        else if (FAILED_DELIVERY_STATUSES.includes(st) || RETURN_SHIPMENT_STATUSES.includes(st)) doc.setTextColor(220, 38, 38);
         else doc.setTextColor(37, 99, 235);
 
         doc.text(st, M + 144, Y + 4.5);

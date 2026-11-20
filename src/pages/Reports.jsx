@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { BarChart3, FileText, Download } from "lucide-react";
 import Card from "../components/ui/Card";
-import { YELLOW_DEEP } from "../lib/constants";
+import { FAILED_DELIVERY_STATUSES, RETURN_SHIPMENT_STATUSES, YELLOW_DEEP } from "../lib/constants";
 import { AppContext } from "../context/AppContext";
 import { generateReportPDF, generateLoadSheet } from "../lib/pdfGenerator";
 
@@ -46,9 +46,11 @@ export default function Reports({ go }) {
     },
     {
       name: "Failed Deliveries",
-      desc: "Returned and undelivered",
+      desc: "Delivery attempts, failures, and returns",
       action: () => {
-        const failed = activeShipments.filter((s) => s.status === "Returned");
+        const failed = activeShipments.filter((s) =>
+          FAILED_DELIVERY_STATUSES.includes(s.status) || RETURN_SHIPMENT_STATUSES.includes(s.status)
+        );
         generateReportPDF("Failed_Deliveries", failed.length > 0 ? failed : activeShipments, settings);
       },
     },
@@ -56,7 +58,7 @@ export default function Reports({ go }) {
       name: "Returned Parcels",
       desc: "RTS shipment details",
       action: () => {
-        const returned = activeShipments.filter((s) => s.status === "Returned");
+        const returned = activeShipments.filter((s) => RETURN_SHIPMENT_STATUSES.includes(s.status));
         generateReportPDF("Returned_Parcels", returned.length > 0 ? returned : activeShipments, settings);
       },
     },

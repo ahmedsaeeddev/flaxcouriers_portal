@@ -4,13 +4,13 @@ import { getAuth } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyA0MVMzBetsqBRY3z6wteNJznaSmznmMa8",
-  authDomain: "flaxcouriers.firebaseapp.com",
-  projectId: "flaxcouriers",
-  storageBucket: "flaxcouriers.firebasestorage.app",
-  messagingSenderId: "818356534738",
-  appId: "1:818356534738:web:40f4485cf5764069665c0b",
-  measurementId: "G-RRS7243HNH",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);

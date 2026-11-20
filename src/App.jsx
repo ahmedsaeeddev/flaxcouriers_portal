@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { auth } from "./firebase/firebase";
 import { AppContext } from "./context/AppContext";
 import Sidebar from "./components/layout/Sidebar";
@@ -11,6 +19,9 @@ import CreateShipment from "./pages/CreateShipment";
 import BulkBooking from "./pages/BulkBooking";
 import TrackShipment from "./pages/TrackShipment";
 import PickupsPage from "./pages/PickupsPage";
+import PickupSheetPage from "./pages/PickupSheetPage";
+import ThirdPartyRidersPage from "./pages/ThirdPartyRidersPage";
+import DeliverySheetsPage from "./pages/DeliverySheetsPage";
 import CustomersPage from "./pages/CustomersPage";
 import CODPage from "./pages/CODPage";
 import Invoices from "./pages/Invoices";
@@ -21,90 +32,86 @@ import SettingsPage from "./pages/SettingsPage";
 import ProfilePage from "./pages/ProfilePage";
 import { PAGE_TITLES } from "./lib/constants";
 
-export default function App() {
-  const { userRole } = useContext(AppContext) || {};
-  const [authed, setAuthed] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
-  const [page, setPage] = useState("dashboard");
+const PAGE_PATHS = {
+  dashboard: "/dashboard",
+  shipments: "/shipments",
+  create: "/shipments/create",
+  bulk: "/shipments/bulk",
+  "pickup-sheet": "/pickup-sheet",
+  "third-party-riders": "/third-party-riders",
+  "delivery-sheets": "/delivery-sheets",
+  track: "/track",
+  pickups: "/pickups",
+  customers: "/customers",
+  cod: "/cod",
+  invoices: "/invoices",
+  reports: "/reports",
+  api: "/integrations/api",
+  support: "/support",
+  settings: "/settings",
+  profile: "/profile",
+};
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "#0A2342" }}>
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "#F4C430" }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="#0A2342">
+            <path d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8z" />
+            <circle cx="5.5" cy="18.5" r="2.5" />
+            <circle cx="18.5" cy="18.5" r="2.5" />
+          </svg>
+        </div>
+        <div className="w-6 h-6 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+        <p className="text-white/50 text-xs mt-2">Connecting to Flax Couriers...</p>
+      </div>
+    </div>
+  );
+}
+
+function PortalLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [dark, setDark] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // ── Redirect Admin away from Client-only booking pages ─────────────────────
-  useEffect(() => {
-    if (userRole === "admin" && (page === "create" || page === "bulk")) {
-      setPage("shipments");
-    }
-  }, [userRole, page]);
+  const currentPath = location.pathname.replace(/\/+$/, "") || "/";
+  const page = Object.keys(PAGE_PATHS).find(
+    (pageId) => PAGE_PATHS[pageId] === currentPath
+  ) || (currentPath.startsWith("/delivery-sheets/") ? "delivery-sheets" : "dashboard");
 
-  // ── Firebase Auth state listener ────────────────────────────────────────
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setAuthed(!!user);
-      setAuthChecked(true);
-    });
-    return () => unsub();
-  }, []);
+  const go = useCallback((pageId) => {
+    navigate(PAGE_PATHS[pageId] || PAGE_PATHS.dashboard);
+  }, [navigate]);
 
-  // ── Page transition loader ───────────────────────────────────────────────
   useEffect(() => {
-    if (authed) {
-      setLoading(true);
-      const t = setTimeout(() => setLoading(false), 400);
-      return () => clearTimeout(t);
-    }
-  }, [page, authed]);
+    setLoading(true);
+    const timeout = window.setTimeout(() => setLoading(false), 400);
+    return () => window.clearTimeout(timeout);
+  }, [location.pathname]);
 
-  // ── Custom page-change event (from Topbar search etc.) ───────────────────
   useEffect(() => {
-    const handlePageChange = (e) => setPage(e.detail);
+    const handlePageChange = (event) => go(event.detail);
     window.addEventListener("fcs_change_page", handlePageChange);
     return () => window.removeEventListener("fcs_change_page", handlePageChange);
-  }, []);
+  }, [go]);
 
-  // ── Auth not yet resolved — show loading spinner ────────────────────────
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#0A2342" }}>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "#F4C430" }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="#0A2342">
-              <path d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8z" />
-              <circle cx="5.5" cy="18.5" r="2.5" />
-              <circle cx="18.5" cy="18.5" r="2.5" />
-            </svg>
-          </div>
-          <div className="w-6 h-6 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-white/50 text-xs mt-2">Connecting to Flax Couriers...</p>
-        </div>
+  if (currentPath === "/delivery-sheets/new") {
+    return loading ? (
+      <div className="min-h-screen bg-[#ddd]" />
+    ) : (
+      <div className="min-h-screen bg-[#ddd]">
+        <Outlet />
       </div>
     );
   }
 
-  // ── Not logged in → login page ───────────────────────────────────────────
-  if (!authed) return <LoginPage onLogin={() => {}} />;
-
-  const pages = {
-    dashboard: <Dashboard go={setPage} />,
-    shipments: <ShipmentsPage go={setPage} />,
-    create: <CreateShipment go={setPage} />,
-    bulk: <BulkBooking go={setPage} />,
-    track: <TrackShipment go={setPage} />,
-    pickups: <PickupsPage go={setPage} />,
-    customers: <CustomersPage go={setPage} />,
-    cod: <CODPage go={setPage} />,
-    invoices: <Invoices go={setPage} />,
-    reports: <Reports go={setPage} />,
-    api: <ApiIntegration go={setPage} />,
-    support: <SupportTickets go={setPage} />,
-    settings: <SettingsPage go={setPage} />,
-    profile: <ProfilePage go={setPage} />,
-  };
-
   return (
     <div className={dark ? "dark" : ""} style={{ fontFamily: "Inter, sans-serif" }}>
       <div className={`min-h-screen flex ${dark ? "bg-[#081b36]" : "bg-[#F8F9FA]"}`}>
-        <Sidebar page={page} setPage={setPage} open={open} setOpen={setOpen} />
+        <Sidebar page={page} setPage={go} open={open} setOpen={setOpen} />
         <div className="flex-1 lg:pl-[260px] min-w-0">
           <Topbar
             title={PAGE_TITLES[page][0]}
@@ -112,24 +119,96 @@ export default function App() {
             onMenu={() => setOpen(true)}
             dark={dark}
             setDark={setDark}
-            setPage={setPage}
+            setPage={go}
           />
           {loading ? (
             <div className="p-5 lg:p-8 space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="skeleton h-28 rounded-2xl" />
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="skeleton h-28 rounded-2xl" />
                 ))}
               </div>
               <div className="skeleton h-72 rounded-2xl" />
             </div>
           ) : (
             <div key={page} className="animate-fadeUp">
-              {pages[page]}
+              <Outlet />
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  const { userRole } = useContext(AppContext) || {};
+  const [authed, setAuthed] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const navigate = useNavigate();
+  const go = useCallback((pageId) => {
+    navigate(PAGE_PATHS[pageId] || PAGE_PATHS.dashboard);
+  }, [navigate]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthed(!!user);
+      setAuthChecked(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (!authChecked) return <LoadingScreen />;
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={authed ? <Navigate to="/dashboard" replace /> : <LoginPage />}
+      />
+      <Route element={authed ? <Outlet /> : <Navigate to="/login" replace />}>
+        <Route element={<PortalLayout />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard go={go} />} />
+          <Route path="shipments" element={<ShipmentsPage go={go} />} />
+          <Route path="shipments/create" element={<CreateShipment go={go} />} />
+          <Route
+            path="shipments/bulk"
+            element={userRole === "client" ? <BulkBooking go={go} /> : <Navigate to="/shipments" replace />}
+          />
+          <Route path="track" element={<TrackShipment go={go} />} />
+          <Route path="pickups" element={<PickupsPage go={go} />} />
+          <Route
+            path="pickup-sheet"
+            element={userRole === "admin" ? <PickupSheetPage /> : <Navigate to="/shipments" replace />}
+          />
+          <Route
+            path="third-party-riders"
+            element={userRole === "admin" ? <ThirdPartyRidersPage /> : <Navigate to="/shipments" replace />}
+          />
+          <Route
+            path="delivery-sheets"
+            element={userRole === "admin" ? <DeliverySheetsPage go={go} initialMode="list" /> : <Navigate to="/shipments" replace />}
+          />
+          <Route
+            path="delivery-sheets/new"
+            element={userRole === "admin" ? <DeliverySheetsPage go={go} initialMode="new" /> : <Navigate to="/shipments" replace />}
+          />
+          <Route
+            path="delivery-sheets/:sheetDocId"
+            element={userRole === "admin" ? <DeliverySheetsPage go={go} initialMode="edit" /> : <Navigate to="/shipments" replace />}
+          />
+          <Route path="customers" element={<CustomersPage go={go} />} />
+          <Route path="cod" element={<CODPage go={go} />} />
+          <Route path="invoices" element={<Invoices go={go} />} />
+          <Route path="reports" element={<Reports go={go} />} />
+          <Route path="integrations/api" element={<ApiIntegration go={go} />} />
+          <Route path="support" element={<SupportTickets go={go} />} />
+          <Route path="settings" element={<SettingsPage go={go} />} />
+          <Route path="profile" element={<ProfilePage go={go} />} />
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to={authed ? "/dashboard" : "/login"} replace />} />
+    </Routes>
   );
 }

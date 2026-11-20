@@ -11,6 +11,11 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Badge, { StatusPill } from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
+import {
+  ACTIVE_SHIPMENT_STATUSES,
+  PICKUP_WAITING_STATUSES,
+  RETURN_SHIPMENT_STATUSES,
+} from "../lib/constants";
 import { generateLoadSheet, generateAWB } from "../lib/pdfGenerator";
 
 export default function Dashboard({ go }) {
@@ -22,8 +27,10 @@ export default function Dashboard({ go }) {
   // Calculate client-specific stats
   const clientShipments = userRole === "admin" ? shipments : (userShipments || []);
   const clientDelivered = clientShipments.filter((s) => s.status === "Delivered").length;
-  const clientInTransit = clientShipments.filter((s) => s.status === "In Transit" || s.status === "Out for Delivery").length;
-  const clientPending = clientShipments.filter((s) => s.status === "Pending Pickup").length;
+  const clientInTransit = clientShipments.filter(
+    (s) => ACTIVE_SHIPMENT_STATUSES.includes(s.status) && !RETURN_SHIPMENT_STATUSES.includes(s.status)
+  ).length;
+  const clientPending = clientShipments.filter((s) => PICKUP_WAITING_STATUSES.includes(s.status)).length;
 
   return (
     <div className="p-5 lg:p-8 space-y-6">

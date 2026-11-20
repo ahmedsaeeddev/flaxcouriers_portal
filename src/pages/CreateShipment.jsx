@@ -18,11 +18,31 @@ const CITIES = [
 ];
 
 export default function CreateShipment({ go }) {
-  const { addShipment, settings, currentUser, currentShipper, customers } = useContext(AppContext);
+  const { addShipment, settings, currentUser, currentShipper, customers, userRole } = useContext(AppContext);
+  const isAdmin = userRole === "admin";
   const [trackingId] = useState("FLX93820" + Math.floor(100 + Math.random() * 899));
   const [submittedShipment, setSubmittedShipment] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [selectedShipperId, setSelectedShipperId] = useState("");
+
+  const availableShippers = [...new Map(
+    (customers || [])
+      .filter((customer) =>
+        customer.role === "client" ||
+        customer.role === "shipper" ||
+        Boolean(customer.accNum)
+      )
+      .map((shipper) => [
+        String(shipper.accNum || shipper.email || shipper._docId || shipper.name || "").toLowerCase(),
+        shipper,
+      ])
+  ).values()].sort((a, b) =>
+    (a.name || a.company || "").localeCompare(b.name || b.company || "")
+  );
+  const selectedShipper = availableShippers.find(
+    (shipper) => String(shipper._docId || shipper.accNum || shipper.email || shipper.name || "") === selectedShipperId
+  );
 
   // 1. Basic Information
   const [division, setDivision]       = useState("EXPRESS");
@@ -52,6 +72,7 @@ export default function CreateShipment({ go }) {
   const [returnAddress, setReturnAddress] = useState("");
 
   useEffect(() => {
+    if (isAdmin) return;
     if (currentShipper) {
       setSenderName(currentShipper.name || currentShipper.company || "");
       setSenderEmail(currentShipper.email || currentUser?.email || "");
@@ -67,7 +88,20 @@ export default function CreateShipment({ go }) {
       setSenderPhone("0324-6282621");
       setSenderAddress("model town link road new liberty tower gf 16 lahore");
     }
-  }, [currentShipper, currentUser]);
+  }, [isAdmin, currentShipper, currentUser]);
+
+  const handleShipperChange = (shipperId) => {
+    const shipper = availableShippers.find(
+      (item) => String(item._docId || item.accNum || item.email || item.name || "") === shipperId
+    );
+    setSelectedShipperId(shipperId);
+    setSenderName(shipper?.name || shipper?.company || "");
+    setSenderEmail(shipper?.email || "");
+    setSenderPhone(shipper?.phone || "");
+    setSenderAddress(shipper?.address || "");
+    setReturnAddress(shipper?.address || "");
+    setOriginCity(shipper?.city && CITIES.includes(shipper.city) ? shipper.city : "Lahore");
+  };
 
   // 3. Consignee Details (Receiver)
   const [consigneeSearch, setConsigneeSearch] = useState("");
@@ -144,6 +178,7 @@ export default function CreateShipment({ go }) {
     weight: parsedWeight,
     pieces: parseInt(pieces) || 1,
     cod: parsedCod > 0 ? `Rs ${parsedCod.toLocaleString()}` : "Rs 0",
+    deliveryCharges: totalRate,
     parcelType: division,
     serviceType,
     instructions,
@@ -152,6 +187,10 @@ export default function CreateShipment({ go }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isAdmin && !selectedShipper) {
+      alert("Please select a shipper before creating the parcel.");
+      return;
+    }
     if (!receiverName || !receiverPhone || !receiverAddress) {
       alert("Please fill in all required Consignee fields (Name, Phone, Address).");
       return;
@@ -165,6 +204,7 @@ export default function CreateShipment({ go }) {
         senderEmail,
         senderPhone,
         senderAddress,
+        shipperAccNum: isAdmin ? selectedShipper?.accNum || "" : currentShipper?.accNum || "",
         receiverName,
         receiverEmail,
         receiverPhone,
@@ -173,6 +213,7 @@ export default function CreateShipment({ go }) {
         weight,
         pieces,
         codAmount: paymentType === "COD" ? codAmount : 0,
+        deliveryCharges: totalRate,
         parcelType: division,
         serviceType,
         instructions: `${productDesc ? `Product: ${productDesc}. ` : ""}${instructions}`,
@@ -244,8 +285,14 @@ export default function CreateShipment({ go }) {
               Single Booking
             </span>
           </div>
-          <h2 className="font-display font-bold text-[#0A2342] text-xl lg:text-2xl">Book Packet</h2>
-          <p className="text-[12.5px] text-slate-400">Enter consignment details for instant automated waybill booking</p>
+          <h2 className="font-display font-bold text-[#0A2342] text-xl lg:text-2xl">
+            {isAdmin ? "Create Parcel for Shipper" : "Book Packet"}
+          </h2>
+          <p className="text-[12.5px] text-slate-400">
+            {isAdmin
+              ? "Select a shipper and enter the consignee and parcel details."
+              : "Enter consignment details for instant automated waybill booking"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button 
@@ -254,9 +301,11 @@ export default function CreateShipment({ go }) {
           >
             <Sparkles size={13} className="animate-pulse" /> AI Parcel Scan
           </Button>
-          <Button variant="outline" onClick={() => go("bulk")}>
-            + Bulk CSV Booking
-          </Button>
+          {!isAdmin && (
+            <Button variant="outline" onClick={() => go("bulk")}>
+              + Bulk CSV Booking
+            </Button>
+          )}
           <Button variant="navy" onClick={() => go("shipments")}>
             View All Bookings
           </Button>
@@ -371,15 +420,42 @@ export default function CreateShipment({ go }) {
                 <h3 className="font-display font-bold text-[#0A2342] text-sm">Shipper Details</h3>
               </div>
               <span className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full">
-                🔒 Locked Profile
+                {isAdmin ? "Admin Booking" : "🔒 Locked Profile"}
               </span>
             </div>
 
-            <Field label="Shipper Account *">
-              <select disabled value={shipperType} onChange={(e) => setShipperType(e.target.value)} className={`${inputCls} !bg-slate-100 !text-slate-700 !cursor-not-allowed opacity-90`}>
-                <option value="Self">Self (Merchant Account)</option>
-              </select>
-            </Field>
+            {isAdmin ? (
+              <Field label="Select Shipper *">
+                <select
+                  required
+                  value={selectedShipperId}
+                  onChange={(e) => handleShipperChange(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">-- Choose Shipper --</option>
+                  {availableShippers.map((shipper) => {
+                    const shipperId = String(
+                      shipper._docId || shipper.accNum || shipper.email || shipper.name || ""
+                    );
+                    return (
+                      <option key={shipperId} value={shipperId}>
+                        {shipper.name || shipper.company || "Shipper"}
+                        {shipper.accNum ? ` (Account #${shipper.accNum})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                {availableShippers.length === 0 && (
+                  <span className="mt-1 block text-xs text-slate-400">No shipper accounts are available.</span>
+                )}
+              </Field>
+            ) : (
+              <Field label="Shipper Account *">
+                <select disabled value={shipperType} onChange={(e) => setShipperType(e.target.value)} className={`${inputCls} !bg-slate-100 !text-slate-700 !cursor-not-allowed opacity-90`}>
+                  <option value="Self">Self (Merchant Account)</option>
+                </select>
+              </Field>
+            )}
 
             <Field label="Shipper Name *">
               <input disabled value={senderName} placeholder="Shipper Name" className={`${inputCls} !bg-slate-100 !text-slate-700 !cursor-not-allowed opacity-90 font-medium`} />

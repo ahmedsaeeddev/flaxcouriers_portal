@@ -2,7 +2,6 @@ import React, { useState, useContext } from "react";
 import { Upload, Download, FileText, ClipboardList, CheckCircle2 } from "lucide-react";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
-import Badge from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
 import { exportToCSV, generateAWB, generateLoadSheet } from "../lib/pdfGenerator";
 
@@ -40,6 +39,12 @@ export default function BulkBooking({ go }) {
     });
 
     setParsedRows(rows);
+  };
+
+  const updateParsedRow = (rowIndex, field, value) => {
+    setParsedRows((rows) =>
+      rows.map((row, index) => index === rowIndex ? { ...row, [field]: value } : row)
+    );
   };
 
   const handleBulkUpload = async () => {
@@ -146,6 +151,7 @@ export default function BulkBooking({ go }) {
                   <th className="pb-2">City</th>
                   <th className="pb-2">Address</th>
                   <th className="pb-2">Weight</th>
+                  <th className="pb-2">Pieces</th>
                   <th className="pb-2">COD Amount</th>
                   <th className="pb-2">Service</th>
                 </tr>
@@ -153,14 +159,78 @@ export default function BulkBooking({ go }) {
               <tbody>
                 {parsedRows.map((r, i) => (
                   <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="py-2.5 font-semibold text-[#0A2342]">{r.receiverName}</td>
-                    <td className="py-2.5 text-slate-600">{r.receiverPhone}</td>
-                    <td className="py-2.5 text-slate-500">{r.city}</td>
-                    <td className="py-2.5 text-slate-500">{r.receiverAddress}</td>
-                    <td className="py-2.5 text-slate-500">{r.weight} kg</td>
-                    <td className="py-2.5 font-medium text-emerald-700">Rs {r.codAmount}</td>
-                    <td className="py-2.5">
-                      <Badge tone="yellow">{r.serviceType}</Badge>
+                    <td className="py-2 pr-2">
+                      <input
+                        aria-label={`Receiver name, row ${i + 1}`}
+                        value={r.receiverName}
+                        onChange={(e) => updateParsedRow(i, "receiverName", e.target.value)}
+                        className="w-full min-w-[130px] rounded-md border border-slate-200 px-2 py-1.5 font-semibold text-[#0A2342] outline-none focus:border-[#F4C430]"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        aria-label={`Receiver phone, row ${i + 1}`}
+                        value={r.receiverPhone}
+                        onChange={(e) => updateParsedRow(i, "receiverPhone", e.target.value)}
+                        className="w-full min-w-[115px] rounded-md border border-slate-200 px-2 py-1.5 text-slate-600 outline-none focus:border-[#F4C430]"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        aria-label={`City, row ${i + 1}`}
+                        value={r.city}
+                        onChange={(e) => updateParsedRow(i, "city", e.target.value)}
+                        className="w-full min-w-[100px] rounded-md border border-slate-200 px-2 py-1.5 text-slate-500 outline-none focus:border-[#F4C430]"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        aria-label={`Address, row ${i + 1}`}
+                        value={r.receiverAddress}
+                        onChange={(e) => updateParsedRow(i, "receiverAddress", e.target.value)}
+                        className="w-full min-w-[230px] rounded-md border border-slate-200 px-2 py-1.5 text-slate-500 outline-none focus:border-[#F4C430]"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        aria-label={`Weight in kilograms, row ${i + 1}`}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={r.weight}
+                        onChange={(e) => updateParsedRow(i, "weight", e.target.value)}
+                        className="w-20 rounded-md border border-slate-200 px-2 py-1.5 text-slate-500 outline-none focus:border-[#F4C430]"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        aria-label={`Pieces, row ${i + 1}`}
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={r.pieces}
+                        onChange={(e) => updateParsedRow(i, "pieces", e.target.value)}
+                        className="w-16 rounded-md border border-slate-200 px-2 py-1.5 text-slate-500 outline-none focus:border-[#F4C430]"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        aria-label={`COD amount, row ${i + 1}`}
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={r.codAmount}
+                        onChange={(e) => updateParsedRow(i, "codAmount", e.target.value)}
+                        className="w-24 rounded-md border border-slate-200 px-2 py-1.5 font-medium text-emerald-700 outline-none focus:border-[#F4C430]"
+                      />
+                    </td>
+                    <td className="py-2">
+                      <input
+                        aria-label={`Service type, row ${i + 1}`}
+                        value={r.serviceType}
+                        onChange={(e) => updateParsedRow(i, "serviceType", e.target.value)}
+                        className="w-full min-w-[110px] rounded-md border border-slate-200 px-2 py-1.5 text-slate-600 outline-none focus:border-[#F4C430]"
+                      />
                     </td>
                   </tr>
                 ))}

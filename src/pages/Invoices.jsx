@@ -6,19 +6,82 @@ import Card from "../components/ui/Card";
 import Field from "../components/ui/Field";
 import { StatusPill } from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
-import { inputCls } from "../lib/constants";
-import { generateInvoicePDF } from "../lib/pdfGenerator";
+import { inputCls, SHIPMENT_STATUS_OPTIONS } from "../lib/constants";
+import { generateInvoicePDF, generateShipmentInvoicePDF } from "../lib/pdfGenerator";
+
+function getLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getShipmentDateKey(shipment) {
+  let date = Number.isFinite(shipment.createdAt) && shipment.createdAt > 0
+    ? new Date(shipment.createdAt)
+    : null;
+
+  if (!date || Number.isNaN(date.getTime())) {
+    const rawDate = String(shipment.date || "").trim();
+    const monthDay = /^([A-Za-z]{3})\s+(\d{1,2})$/.exec(rawDate);
+    if (monthDay) {
+      const month = new Date(`${monthDay[1]} 1, 2000`).getMonth();
+      date = new Date(new Date().getFullYear(), month, Number(monthDay[2]));
+    } else {
+      date = new Date(rawDate);
+    }
+  }
+
+  return date && !Number.isNaN(date.getTime()) ? getLocalDateKey(date) : null;
+}
+
+function getInvoiceStatus(shipment) {
+  return String(shipment.status || "Unknown").trim();
+}
+
+function getShipperKey(shipper) {
+  return String(shipper._docId || shipper.accNum || shipper.email || shipper.name || "");
+}
 
 export default function Invoices() {
-  const { invoices, generateInvoice, deleteInvoice, customers, settings } = useContext(AppContext);
+  const {
+    invoices,
+    generateInvoice,
+    deleteInvoice,
+    customers,
+    settings,
+    userRole,
+    userShipments,
+    currentShipper,
+  } = useContext(AppContext);
   const [searchValue, setSearchValue] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [invoiceRequestDate, setInvoiceRequestDate] = useState("");
+  const [requestedInvoiceDate, setRequestedInvoiceDate] = useState("");
 
   // Form states
   const [cust, setCust] = useState("");
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("Pending");
   const [success, setSuccess] = useState(false);
+
+  const shippers = [...new Map(
+    (customers || [])
+      .filter((customer) =>
+        customer.role === "client" ||
+        customer.role === "shipper" ||
+        Boolean(customer.accNum)
+      )
+      .map((shipper) => {
+        const dedupeKey = String(
+          shipper.accNum || shipper.email || shipper._docId || shipper.name || ""
+        ).toLowerCase();
+        return [dedupeKey, shipper];
+      })
+  ).values()].sort((a, b) =>
+    (a.name || a.company || "").localeCompare(b.name || b.company || "")
+  );
 
   const filteredInvoices = invoices.filter((r) => {
     const searchLower = searchValue.toLowerCase();
@@ -28,16 +91,33 @@ export default function Invoices() {
     );
   });
 
+  const invoiceShipments = (userShipments || []).filter(
+    (shipment) => getShipmentDateKey(shipment) === requestedInvoiceDate
+  );
+  const invoiceStatusCounts = invoiceShipments.reduce((counts, shipment) => {
+    const status = getInvoiceStatus(shipment);
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+  const invoiceStatusRows = [
+    ...SHIPMENT_STATUS_OPTIONS.filter((status) => invoiceStatusCounts[status]),
+    ...Object.keys(invoiceStatusCounts).filter((status) => !SHIPMENT_STATUS_OPTIONS.includes(status)).sort(),
+  ];
+
   const handleGenerate = async (e) => {
     e.preventDefault();
-    const finalCust = cust || (customers[0]?.name || "Walkin Customer");
+    const selectedShipper = shippers.find((shipper) => getShipperKey(shipper) === cust);
+    if (!selectedShipper) {
+      alert("Please select a shipper.");
+      return;
+    }
     if (!amount) {
       alert("Please enter invoice amount.");
       return;
     }
 
     await generateInvoice({
-      cust: finalCust,
+      cust: selectedShipper.name || selectedShipper.company || "Shipper",
       amount: parseFloat(amount),
       status,
     });
@@ -51,6 +131,21 @@ export default function Invoices() {
     }, 1000);
   };
 
+  const handleInvoiceRequest = (e) => {
+    e.preventDefault();
+    setRequestedInvoiceDate(invoiceRequestDate);
+    setShowRequestModal(false);
+  };
+
+  const handleDownloadRequestedInvoice = () => {
+    generateShipmentInvoicePDF({
+      date: requestedInvoiceDate,
+      shipments: invoiceShipments,
+      shipperName: currentShipper?.company || currentShipper?.name || "Shipper",
+      shipperAccount: currentShipper?.accNum || "",
+    }, settings);
+  };
+
   const YELLOW = settings.accentColor || "#F4C430";
 
   return (
@@ -59,9 +154,15 @@ export default function Invoices() {
         title="Invoices"
         subtitle="Billing documents and payment history"
         actions={
-          <Button onClick={() => setShowModal(true)}>
-            <Plus size={15} /> Generate Invoice
-          </Button>
+          userRole === "client" ? (
+            <Button onClick={() => setShowRequestModal(true)}>
+              <Plus size={15} /> Request Invoice
+            </Button>
+          ) : (
+            <Button onClick={() => setShowModal(true)}>
+              <Plus size={15} /> Generate Invoice
+            </Button>
+          )
         }
         searchValue={searchValue}
         onSearchChange={(e) => setSearchValue(e.target.value)}
@@ -103,6 +204,83 @@ export default function Invoices() {
         )}
       />
 
+      {userRole === "client" && requestedInvoiceDate && (
+        <section className="mx-5 mb-6 rounded-xl border border-slate-200 bg-white p-5 lg:mx-8">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-800">Invoice parcel summary</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {new Date(`${requestedInvoiceDate}T00:00:00`).toLocaleDateString()} · {invoiceShipments.length} parcel{invoiceShipments.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={invoiceShipments.length === 0}
+                onClick={handleDownloadRequestedInvoice}
+              >
+                <Download size={15} /> Download Invoice
+              </Button>
+              <button
+                type="button"
+                onClick={() => setRequestedInvoiceDate("")}
+                className="text-sm text-slate-500 hover:text-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          {invoiceShipments.length === 0 ? (
+            <p className="py-5 text-sm text-slate-500">No parcels were booked on this date.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {invoiceStatusRows.map((status) => (
+                <div key={status} className="flex items-center justify-between py-3 text-sm">
+                  <span className="text-slate-600">{status}</span>
+                  <span className="font-medium tabular-nums text-slate-800">{invoiceStatusCounts[status]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {showRequestModal && userRole === "client" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invoice-request-title"
+            className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+          >
+            <h2 id="invoice-request-title" className="text-base font-semibold text-slate-800">
+              Request an invoice
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Select the shipment booking date to review.
+            </p>
+            <form onSubmit={handleInvoiceRequest} className="mt-5 space-y-4">
+              <Field label="Invoice date">
+                <input
+                  type="date"
+                  required
+                  value={invoiceRequestDate}
+                  onChange={(event) => setInvoiceRequestDate(event.target.value)}
+                  className={inputCls}
+                />
+              </Field>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                <Button type="button" variant="ghost" onClick={() => setShowRequestModal(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Request &amp; View Summary</Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setShowModal(false)} />
@@ -117,15 +295,25 @@ export default function Invoices() {
             </div>
 
             <form onSubmit={handleGenerate} className="space-y-4">
-              <Field label="Select Customer">
-                <select value={cust} onChange={(e) => setCust(e.target.value)} className={inputCls}>
-                  <option value="">-- Select Customer --</option>
-                  {customers.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name} ({c.city})
+              <Field label="Select Shipper">
+                <select
+                  required
+                  value={cust}
+                  onChange={(e) => setCust(e.target.value)}
+                  className={inputCls}
+                  disabled={shippers.length === 0}
+                >
+                  <option value="">-- Select Shipper --</option>
+                  {shippers.map((shipper) => (
+                    <option key={getShipperKey(shipper)} value={getShipperKey(shipper)}>
+                      {shipper.name || shipper.company || "Shipper"}
+                      {shipper.accNum ? ` (Account #${shipper.accNum})` : ""}
                     </option>
                   ))}
                 </select>
+                {shippers.length === 0 && (
+                  <span className="mt-1 block text-xs text-slate-400">No shipper accounts are available.</span>
+                )}
               </Field>
 
               <Field label="Invoice Amount (Rs)">

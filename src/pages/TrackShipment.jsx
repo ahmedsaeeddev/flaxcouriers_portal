@@ -4,6 +4,7 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { StatusPill } from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
+import { RETURN_SHIPMENT_STATUSES } from "../lib/constants";
 
 export default function TrackShipment() {
   const { shipments, settings } = useContext(AppContext);
@@ -117,7 +118,7 @@ export default function TrackShipment() {
 
             <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-4">Tracking History</p>
             <div className="pl-2 space-y-0">
-              {foundShipment.timeline.map((s, i) => (
+              {(foundShipment.timeline || []).map((s, i) => (
                 <div key={i} className="flex gap-4 relative">
                   <div className="flex flex-col items-center">
                     {s.done ? (
@@ -125,7 +126,7 @@ export default function TrackShipment() {
                     ) : (
                       <Circle size={20} className="text-slate-300 shrink-0 bg-white z-10" />
                     )}
-                    {i < foundShipment.timeline.length - 1 && (
+                    {i < (foundShipment.timeline || []).length - 1 && (
                       <div className={`w-px flex-1 my-1 -translate-y-2 ${s.done ? "bg-emerald-200" : "bg-slate-100"}`} style={{ minHeight: 40 }} />
                     )}
                   </div>
@@ -157,10 +158,10 @@ export default function TrackShipment() {
                 <span>
                   {foundShipment.status === "Delivered"
                     ? `Successfully delivered in ${foundShipment.city}`
-                    : foundShipment.status === "Out for Delivery"
+                    : ["Out for Delivery", "Delivery in Progress"].includes(foundShipment.status)
                     ? `Parcel is out for delivery near DHA Phase 5, ${foundShipment.city}`
-                    : foundShipment.status === "Returned"
-                    ? `Parcel returned to origin facility in ${foundShipment.city}`
+                    : RETURN_SHIPMENT_STATUSES.includes(foundShipment.status)
+                    ? `Parcel is being returned to shipper from ${foundShipment.city}`
                     : `Parcel is currently [${foundShipment.status}] at ${foundShipment.city} hub.`}
                 </span>
               </div>

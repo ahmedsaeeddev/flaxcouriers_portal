@@ -8,9 +8,20 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "../firebase/firebase";
 import { seedInitialData } from "../firebase/firestoreHelpers";
+import {
+  ACTIVE_SHIPMENT_STATUSES,
+  DELIVERY_ASSIGNABLE_STATUSES,
+  DELIVERY_SHEET_OUTCOME_STATUSES,
+  FAILED_DELIVERY_STATUSES,
+  PICKUP_WAITING_STATUSES,
+  RETURN_SHIPMENT_STATUSES,
+  getShipmentProgress,
+  getShipmentStatusProgress,
+} from "../lib/constants";
 
 export const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
@@ -28,10 +39,28 @@ const formatRupees = (val) => {
   return `Rs ${val.toLocaleString()}`;
 };
 
+const parseAmount = (value) => Number(String(value || 0).replace(/[^\d.-]/g, "")) || 0;
+const DELIVERY_ATTEMPT_RESULT_STATUSES = new Set([
+  ...FAILED_DELIVERY_STATUSES,
+  "Delivered",
+  "Partial Delivery",
+]);
+
+const markTimelineStatus = (timeline, status, date) => {
+  const events = Array.isArray(timeline) ? [...timeline] : [];
+  const index = events.findIndex((event) => event.t === status);
+  const event = { t: status, d: date, done: true };
+  if (index >= 0) events[index] = { ...events[index], ...event };
+  else events.push(event);
+  return events;
+};
+
 export function AppProvider({ children }) {
   // ── Firestore Collections State ───────────────────────────────────────────
   const [shipments, setShipments] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [thirdPartyRiders, setThirdPartyRiders] = useState([]);
+  const [deliverySheets, setDeliverySheets] = useState([]);
   const [pickups, setPickups] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [tickets, setTickets] = useState([]);
@@ -170,6 +199,26 @@ export function AppProvider({ children }) {
 
         unsubs.push(
           onSnapshot(
+            collection(db, "thirdPartyRiders"),
+            (snap) => {
+              setThirdPartyRiders(snap.docs.map((d) => ({ _docId: d.id, ...d.data() })));
+            },
+            onError
+          )
+        );
+
+        unsubs.push(
+          onSnapshot(
+            collection(db, "deliverySheets"),
+            (snap) => {
+              setDeliverySheets(snap.docs.map((d) => ({ _docId: d.id, ...d.data() })));
+            },
+            onError
+          )
+        );
+
+        unsubs.push(
+          onSnapshot(
             collection(db, "pickups"),
             (snap) => {
               setPickups(snap.docs.map((d) => ({ _docId: d.id, ...d.data() })));
@@ -273,14 +322,17 @@ export function AppProvider({ children }) {
       id: trackingId,
       cust: shipmentData.receiverName,
       city: shipmentData.city,
-      status: "Pending Pickup",
+      status: "Booked",
+      statusProgress: 0,
       cod: shipmentData.codAmount > 0 ? `Rs ${Number(shipmentData.codAmount).toLocaleString()}` : "Rs 0",
+      deliveryCharges: Number(shipmentData.deliveryCharges) || 0,
+      deliveryAttempt: Number(shipmentData.deliveryAttempt) || 0,
       date: dateStr,
-      sender: shipmentData.senderName || currentShipper?.name || currentUser?.displayName || "Merchant Store",
-      senderEmail: currentUser?.email || shipmentData.senderEmail || "",
-      shipperAccNum: currentShipper?.accNum || shipmentData.shipperAccNum || "",
-      senderPhone: shipmentData.senderPhone || currentShipper?.phone || "0300-1112223",
-      senderAddress: shipmentData.senderAddress || currentShipper?.address || "Shop 4, Tariq Road, Karachi",
+      sender: shipmentData.senderName || currentShipper?.name || (userRole === "admin" ? "" : currentUser?.displayName || "Merchant Store"),
+      senderEmail: shipmentData.senderEmail || currentShipper?.email || (userRole === "admin" ? "" : currentUser?.email || ""),
+      shipperAccNum: shipmentData.shipperAccNum || currentShipper?.accNum || "",
+      senderPhone: shipmentData.senderPhone || currentShipper?.phone || (userRole === "admin" ? "" : "0300-1112223"),
+      senderAddress: shipmentData.senderAddress || currentShipper?.address || (userRole === "admin" ? "" : "Shop 4, Tariq Road, Karachi"),
       receiverPhone: shipmentData.receiverPhone || "",
       receiverAddress: shipmentData.receiverAddress || "",
       weight: parseFloat(shipmentData.weight) || 1.0,
@@ -290,10 +342,11 @@ export function AppProvider({ children }) {
       instructions: shipmentData.instructions || "",
       codStatus: "Pending",
       timeline: [
-        { t: "Booking Created", d: `${dateStr}, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, done: true },
+        { t: "Booked", d: `${dateStr}, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, done: true },
         { t: "Picked Up", d: "Pending", done: false },
-        { t: "At Warehouse", d: "Pending", done: false },
-        { t: "Out For Delivery", d: "Pending", done: false },
+        { t: "Received at Origin Hub", d: "Pending", done: false },
+        { t: "Dispatched", d: "Pending", done: false },
+        { t: "Out for Delivery", d: "Pending", done: false },
         { t: "Delivered", d: "Pending", done: false },
       ],
       createdAt: Date.now(),
@@ -336,8 +389,11 @@ export function AppProvider({ children }) {
         id: trackingId,
         cust: s.receiverName || "Walkin Customer",
         city: s.city || "Karachi",
-        status: "Pending Pickup",
+        status: "Booked",
+        statusProgress: 0,
         cod: codVal > 0 ? `Rs ${codVal.toLocaleString()}` : "Rs 0",
+        deliveryCharges: Number(s.deliveryCharges) || 0,
+        deliveryAttempt: Number(s.deliveryAttempt) || 0,
         date: dateStr,
         sender: s.senderName || currentShipper?.name || "Merchant Store",
         senderEmail: currentUser?.email || s.senderEmail || "",
@@ -353,10 +409,11 @@ export function AppProvider({ children }) {
         instructions: s.instructions || "",
         codStatus: "Pending",
         timeline: [
-          { t: "Booking Created", d: `${dateStr}, Bulk Import`, done: true },
+          { t: "Booked", d: `${dateStr}, Bulk Import`, done: true },
           { t: "Picked Up", d: "Pending", done: false },
-          { t: "At Warehouse", d: "Pending", done: false },
-          { t: "Out For Delivery", d: "Pending", done: false },
+          { t: "Received at Origin Hub", d: "Pending", done: false },
+          { t: "Dispatched", d: "Pending", done: false },
+          { t: "Out for Delivery", d: "Pending", done: false },
           { t: "Delivered", d: "Pending", done: false },
         ],
         createdAt: Date.now() + index,
@@ -367,35 +424,352 @@ export function AppProvider({ children }) {
   };
 
   const updateShipmentStatus = async (id, newStatus) => {
+    if (userRole !== "admin") {
+      throw new Error("Only an admin can update shipment status.");
+    }
     const shipment = shipments.find((s) => s.id === id);
-    if (!shipment || !shipment._docId) return;
+    if (!shipment || !shipment._docId) {
+      throw new Error(`Shipment ${id} could not be found.`);
+    }
+
+    const currentProgress = getShipmentProgress(shipment);
+    const newProgress = getShipmentStatusProgress(newStatus);
+    if (newProgress !== null && newProgress < currentProgress) {
+      throw new Error("Shipment status cannot be moved back to an earlier stage.");
+    }
 
     const nowStr = `${getFormattedDate()}, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     const updatedTimeline = (shipment.timeline || []).map((event) => {
       if (newStatus === "In Transit" && event.t === "Picked Up") return { ...event, d: nowStr, done: true };
-      if (newStatus === "Out for Delivery" && ["Picked Up", "At Warehouse", "Out For Delivery"].includes(event.t)) return { ...event, d: nowStr, done: true };
+      if (newStatus === "Out for Delivery" && ["Picked Up", "Received at Origin Hub", "Dispatched", "Out for Delivery"].includes(event.t)) return { ...event, d: nowStr, done: true };
       if (newStatus === "Delivered" && event.t !== "Returned") return { ...event, d: nowStr, done: true };
       return event;
     });
 
-    let timelineCopy = [...updatedTimeline];
-    if (newStatus === "Returned" && !timelineCopy.some((e) => e.t === "Returned")) {
-      timelineCopy.push({ t: "Returned", d: nowStr, done: true });
+    const timelineCopy = [...updatedTimeline];
+    const matchingEventIndex = timelineCopy.findIndex((event) => event.t === newStatus);
+    if (matchingEventIndex >= 0) {
+      timelineCopy[matchingEventIndex] = { ...timelineCopy[matchingEventIndex], d: nowStr, done: true };
+    } else {
+      timelineCopy.push({ t: newStatus, d: nowStr, done: true });
     }
 
     await updateDoc(doc(db, "shipments", shipment._docId), {
       status: newStatus,
+      statusProgress: Math.max(currentProgress, newProgress ?? currentProgress),
       timeline: timelineCopy,
+      deliveryAttempt: Math.max(0, Number(shipment.deliveryAttempt) || 0) +
+        (newStatus !== shipment.status && DELIVERY_ATTEMPT_RESULT_STATUSES.has(newStatus) ? 1 : 0),
     });
     await addNotification(`Shipment ${id} status updated to ${newStatus}`);
   };
 
+  const markShipmentsPickedUp = async (shipmentIds = []) => {
+    const uniqueIds = [...new Set(shipmentIds)];
+    if (uniqueIds.length === 0) return 0;
+
+    const selectedShipments = uniqueIds.map((id) => {
+      const shipment = shipments.find((item) => item.id === id);
+      if (!shipment || !shipment._docId) {
+        throw new Error(`Shipment ${id} could not be found.`);
+      }
+      if (!PICKUP_WAITING_STATUSES.includes(shipment.status) || shipment.pickupStatus === "Picked Up") {
+        throw new Error(`Shipment ${id} is no longer waiting for pickup.`);
+      }
+      return shipment;
+    });
+
+    const nowStr = `${getFormattedDate()}, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    const batch = writeBatch(db);
+
+    selectedShipments.forEach((shipment) => {
+      let foundPickupEvent = false;
+      const timeline = (shipment.timeline || []).map((event) => {
+        if (event.t === "Picked Up") {
+          foundPickupEvent = true;
+          return { ...event, d: nowStr, done: true };
+        }
+        return event;
+      });
+
+      if (!foundPickupEvent) {
+        timeline.push({ t: "Picked Up", d: nowStr, done: true });
+      }
+
+      batch.update(doc(db, "shipments", shipment._docId), {
+        status: "Picked Up",
+        statusProgress: Math.max(getShipmentProgress(shipment), getShipmentStatusProgress("Picked Up")),
+        pickupStatus: "Picked Up",
+        pickedUpAt: Date.now(),
+        timeline,
+      });
+    });
+
+    await batch.commit();
+    await addNotification(`Marked ${selectedShipments.length} parcel${selectedShipments.length === 1 ? "" : "s"} as picked up.`);
+    return selectedShipments.length;
+  };
+
   const deleteShipment = async (id) => {
     const shipment = shipments.find((s) => s.id === id);
-    if (shipment && shipment._docId) {
-      await deleteDoc(doc(db, "shipments", shipment._docId));
-      await addNotification(`Deleted shipment ${id}`);
+    if (!shipment || !shipment._docId) {
+      throw new Error(`Shipment ${id} could not be found.`);
     }
+    if (userRole !== "admin") {
+      const belongsToCurrentShipper = userShipments.some((item) => item.id === id);
+      if (!belongsToCurrentShipper) {
+        throw new Error("You can only delete your own shipments.");
+      }
+      if (shipment.status !== "Booked") {
+        throw new Error("Only booked shipments can be deleted.");
+      }
+    }
+    await deleteDoc(doc(db, "shipments", shipment._docId));
+    await addNotification(`Deleted shipment ${id}`);
+  };
+
+  const addThirdPartyRider = async (riderData) => {
+    if (userRole !== "admin") throw new Error("Only an admin can create third-party riders.");
+    const name = String(riderData.name || "").trim();
+    const phone = String(riderData.phone || "").trim();
+    if (!name || !phone) throw new Error("Rider name and phone are required.");
+
+    const rider = {
+      riderCode: `RDR-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`,
+      name,
+      phone,
+      cnic: String(riderData.cnic || "").trim(),
+      vehicleType: String(riderData.vehicleType || "").trim(),
+      vehicleNumber: String(riderData.vehicleNumber || "").trim(),
+      branch: String(riderData.branch || "").trim(),
+      active: riderData.active !== false,
+      createdAt: Date.now(),
+    };
+    const riderRef = await addDoc(collection(db, "thirdPartyRiders"), rider);
+    const createdRider = { ...rider, _docId: riderRef.id };
+    setThirdPartyRiders((current) => [createdRider, ...current.filter((item) => item._docId !== riderRef.id)]);
+    await addNotification(`Third-party rider created: ${rider.name}`);
+    return createdRider;
+  };
+
+  const updateThirdPartyRider = async (docId, updates) => {
+    if (userRole !== "admin") throw new Error("Only an admin can update third-party riders.");
+    if (!docId) throw new Error("Rider record could not be found.");
+    const riderUpdates = {
+      name: String(updates.name || "").trim(),
+      phone: String(updates.phone || "").trim(),
+      cnic: String(updates.cnic || "").trim(),
+      vehicleType: String(updates.vehicleType || "").trim(),
+      vehicleNumber: String(updates.vehicleNumber || "").trim(),
+      branch: String(updates.branch || "").trim(),
+      active: updates.active !== false,
+      updatedAt: Date.now(),
+    };
+    if (!riderUpdates.name || !riderUpdates.phone) {
+      throw new Error("Rider name and phone are required.");
+    }
+    await updateDoc(doc(db, "thirdPartyRiders", docId), riderUpdates);
+    await addNotification(`Third-party rider updated: ${riderUpdates.name}`);
+  };
+
+  const createDeliverySheet = async (sheetData) => {
+    if (userRole !== "admin") throw new Error("Only an admin can create delivery sheets.");
+    const rider = thirdPartyRiders.find(
+      (item) => item._docId === sheetData.riderId && item.active !== false
+    );
+    if (!rider) throw new Error("Select an active third-party rider.");
+
+    const requestedIds = [...new Set((sheetData.parcels || []).map((parcel) => parcel.shipmentId))];
+    if (requestedIds.length === 0) throw new Error("Add at least one parcel to the delivery sheet.");
+
+    const assignedIds = new Set(
+      deliverySheets
+        .filter((sheet) => sheet.status === "Open")
+        .flatMap((sheet) => (sheet.parcels || []).map((parcel) => parcel.shipmentId))
+    );
+    const sheetShipments = requestedIds.map((shipmentId) => {
+      const shipment = shipments.find((item) => item.id === shipmentId);
+      if (!shipment || !shipment._docId) throw new Error(`Parcel ${shipmentId} could not be found.`);
+      if (!DELIVERY_ASSIGNABLE_STATUSES.includes(shipment.status)) {
+        throw new Error(`Parcel ${shipmentId} is not ready for delivery assignment.`);
+      }
+      if (assignedIds.has(shipmentId)) throw new Error(`Parcel ${shipmentId} is already on an open delivery sheet.`);
+      return shipment;
+    });
+
+    const proposedParcels = new Map((sheetData.parcels || []).map((parcel) => [parcel.shipmentId, parcel]));
+    const now = Date.now();
+    const dateTime = new Date(now).toLocaleString();
+    const sheetId = sheetData.id || `DS-${Date.now().toString().slice(-8)}-${Math.floor(100 + Math.random() * 900)}`;
+    const parcels = sheetShipments.map((shipment) => {
+      const proposed = proposedParcels.get(shipment.id) || {};
+      const parcelStatus = proposed.status || "Out for Delivery";
+      if (!DELIVERY_SHEET_OUTCOME_STATUSES.includes(parcelStatus)) {
+        throw new Error(`Status ${parcelStatus} is not valid for delivery sheet parcels.`);
+      }
+      const currentProgress = getShipmentProgress(shipment);
+      const nextProgress = getShipmentStatusProgress(parcelStatus);
+      if (nextProgress !== null && nextProgress < currentProgress) {
+        throw new Error(`Parcel ${shipment.id} cannot be moved back to an earlier status.`);
+      }
+      return {
+        shipmentId: shipment.id,
+        trackingId: shipment.id,
+        cust: shipment.cust || "Consignee",
+        receiverPhone: shipment.receiverPhone || "",
+        receiverAddress: shipment.receiverAddress || "",
+        city: shipment.city || "",
+        shipper: shipment.sender || "",
+        shipperPhone: String(proposed.shipperPhone || shipment.senderPhone || ""),
+        codAmount: parseAmount(shipment.cod),
+        deliveryCharges: parseAmount(proposed.deliveryCharges || shipment.deliveryCharges || shipment.deliveryCharge),
+        shipmentDate: String(proposed.shipmentDate || shipment.date || ""),
+        deliveryAttempt: Math.max(Number(shipment.deliveryAttempt) || 0, Number(proposed.deliveryAttempt) || 0),
+        weight: Number(shipment.weight) || 0,
+        pieces: Number(shipment.pieces) || 1,
+        status: parcelStatus,
+        paymentStatus: proposed.paymentStatus || "Unpaid",
+        receivedAmount: Number(proposed.receivedAmount) || 0,
+        reason: String(proposed.reason || ""),
+        proofUrl: String(proposed.proofUrl || ""),
+      };
+    });
+
+    const sheet = {
+      id: sheetId,
+      riderId: rider._docId,
+      riderName: rider.name,
+      riderPhone: rider.phone,
+      branch: String(sheetData.branch || rider.branch || ""),
+      origin: String(sheetData.origin || ""),
+      area: String(sheetData.area || ""),
+      date: String(sheetData.date || new Date().toISOString().slice(0, 10)),
+      time: String(sheetData.time || "00:00"),
+      status: "Open",
+      parcels,
+      totalParcels: parcels.length,
+      totalCOD: parcels.reduce((sum, parcel) => sum + parcel.codAmount, 0),
+      totalFuelCharges: Number(sheetData.totalFuelCharges) || 0,
+      totalReceivedAmount: Number(sheetData.totalReceivedAmount) || 0,
+      createdBy: currentUser?.displayName || currentUser?.email || "Admin",
+      createdByUid: currentUser?.uid || "",
+      history: [{ action: "Delivery sheet created", dateTime, status: "Open" }],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const sheetRef = doc(collection(db, "deliverySheets"));
+    const batch = writeBatch(db);
+    batch.set(sheetRef, sheet);
+    const parcelsByShipmentId = new Map(parcels.map((parcel) => [parcel.shipmentId, parcel]));
+    sheetShipments.forEach((shipment) => {
+      const parcel = parcelsByShipmentId.get(shipment.id);
+      batch.update(doc(db, "shipments", shipment._docId), {
+        status: parcel.status,
+        statusProgress: Math.max(
+          getShipmentProgress(shipment),
+          getShipmentStatusProgress(parcel.status) ?? getShipmentProgress(shipment)
+        ),
+        deliverySheetId: sheetId,
+        deliveryAttempt: Number(parcel.deliveryAttempt) || 0,
+        timeline: markTimelineStatus(shipment.timeline, parcel.status, dateTime),
+      });
+    });
+    await batch.commit();
+    const createdSheet = { ...sheet, _docId: sheetRef.id };
+    setDeliverySheets((current) => [createdSheet, ...current.filter((item) => item._docId !== sheetRef.id)]);
+    await addNotification(`Delivery sheet ${sheetId} opened for ${rider.name}.`);
+    return createdSheet;
+  };
+
+  const updateDeliverySheet = async (sheetDocId, updates) => {
+    if (userRole !== "admin") throw new Error("Only an admin can update delivery sheets.");
+    const sheet = deliverySheets.find((item) => item._docId === sheetDocId);
+    if (!sheet) throw new Error("Delivery sheet could not be found.");
+    if (sheet.status === "Close") {
+      throw new Error("Closed delivery sheets are read-only and cannot be reopened or edited.");
+    }
+
+    const nextStatus = updates.status || sheet.status;
+    if (!["Open", "Close"].includes(nextStatus)) throw new Error("Choose Open or Close for the sheet status.");
+
+    const parcels = (updates.parcels || sheet.parcels || []).map((parcel) => ({ ...parcel }));
+    const parcelIds = parcels.map((parcel) => parcel.shipmentId);
+    if (new Set(parcelIds).size !== parcelIds.length) throw new Error("A parcel can appear only once on a delivery sheet.");
+    if (parcels.length === 0) throw new Error("A delivery sheet must contain at least one parcel.");
+    if (nextStatus === "Close" && parcels.some((parcel) => ["Out for Delivery", "Delivery in Progress"].includes(parcel.status))) {
+      throw new Error("Update every in-progress parcel before closing this delivery sheet.");
+    }
+
+    const otherOpenAssignments = new Set(
+      deliverySheets
+        .filter((item) => item._docId !== sheetDocId && item.status === "Open")
+        .flatMap((item) => (item.parcels || []).map((parcel) => parcel.shipmentId))
+    );
+    if (nextStatus === "Open" && parcelIds.some((id) => otherOpenAssignments.has(id))) {
+      throw new Error("A parcel cannot be assigned to more than one open delivery sheet.");
+    }
+
+    const shipmentUpdates = parcels.map((parcel) => {
+      const shipment = shipments.find((item) => item.id === parcel.shipmentId);
+      if (!shipment || !shipment._docId) throw new Error(`Parcel ${parcel.shipmentId} could not be found.`);
+      if (!DELIVERY_SHEET_OUTCOME_STATUSES.includes(parcel.status)) {
+        throw new Error(`Status ${parcel.status} is not valid for delivery sheet parcels.`);
+      }
+      const nextProgress = getShipmentStatusProgress(parcel.status);
+      const currentProgress = getShipmentProgress(shipment);
+      if (nextProgress !== null && nextProgress < currentProgress) {
+        throw new Error(`Parcel ${parcel.shipmentId} cannot be moved back to an earlier status.`);
+      }
+      const deliveryAttempt = Math.max(Number(parcel.deliveryAttempt) || 0, Number(shipment.deliveryAttempt) || 0) +
+        (["Out for Delivery", "Delivery in Progress"].includes(shipment.status) &&
+          DELIVERY_ATTEMPT_RESULT_STATUSES.has(parcel.status) ? 1 : 0);
+      return {
+        parcel: { ...parcel, deliveryAttempt },
+        shipment,
+        nextProgress,
+        currentProgress,
+        deliveryAttempt,
+      };
+    });
+
+    const now = Date.now();
+    const dateTime = new Date(now).toLocaleString();
+    const statusChanged = nextStatus !== sheet.status;
+    const historyEntry = {
+      action: statusChanged
+        ? `Delivery sheet ${nextStatus === "Close" ? "closed" : "reopened"}`
+        : "Delivery sheet updated",
+      dateTime,
+      status: nextStatus,
+    };
+    const savedParcels = shipmentUpdates.map(({ parcel }) => parcel);
+    const updatedSheet = {
+      ...sheet,
+      ...updates,
+      parcels: savedParcels,
+      status: nextStatus,
+      totalParcels: savedParcels.length,
+      totalCOD: savedParcels.reduce((sum, parcel) => sum + (Number(parcel.codAmount) || 0), 0),
+      history: [...(sheet.history || []), historyEntry],
+      updatedAt: now,
+      ...(nextStatus === "Close" ? { closedAt: now } : { closedAt: null }),
+    };
+    delete updatedSheet._docId;
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, "deliverySheets", sheetDocId), updatedSheet);
+    shipmentUpdates.forEach(({ parcel, shipment, nextProgress, currentProgress, deliveryAttempt }) => {
+      batch.update(doc(db, "shipments", shipment._docId), {
+        status: parcel.status,
+        statusProgress: Math.max(currentProgress, nextProgress ?? currentProgress),
+        deliverySheetId: nextStatus === "Open" || parcel.status === "Delivered" ? sheet.id : null,
+        deliveryAttempt,
+        timeline: markTimelineStatus(shipment.timeline, parcel.status, dateTime),
+      });
+    });
+    await batch.commit();
+    await addNotification(`Delivery sheet ${sheet.id} ${nextStatus === "Close" ? "closed" : "saved"}.`);
   };
 
   const releaseCOD = async (id) => {
@@ -525,6 +899,11 @@ export function AppProvider({ children }) {
       status: "Pending",
       date: getFormattedDate(),
       replies: [],
+      createdByRole: userRole,
+      customerUid: currentUser?.uid || "",
+      customerEmail: currentUser?.email?.toLowerCase() || "",
+      customerAccNum: currentShipper?.accNum || "",
+      customerName: currentShipper?.company || currentShipper?.name || currentUser?.displayName || "",
     };
     await addDoc(collection(db, "tickets"), newTicket);
     await addNotification(`Opened support ticket ${id}`);
@@ -540,7 +919,12 @@ export function AppProvider({ children }) {
       const existingReplies = ticket.replies || [];
       updates.replies = [
         ...existingReplies,
-        { text: replyText, sender: "Support Agent", time: new Date().toLocaleTimeString() },
+        {
+          text: replyText,
+          sender: userRole === "admin" ? "Support Agent" : "Customer Agent",
+          time: new Date().toLocaleTimeString(),
+          senderUid: currentUser?.uid || "",
+        },
       ];
     }
     await updateDoc(doc(db, "tickets", ticket._docId), updates);
@@ -567,9 +951,11 @@ export function AppProvider({ children }) {
     const totalOrders = activeShipments.length;
     const deliveredCount = activeShipments.filter((s) => s.status === "Delivered").length;
     const inTransitCount = activeShipments.filter(
-      (s) => s.status === "In Transit" || s.status === "Out for Delivery"
+      (s) => ACTIVE_SHIPMENT_STATUSES.includes(s.status) && !RETURN_SHIPMENT_STATUSES.includes(s.status)
     ).length;
-    const returnedCount = activeShipments.filter((s) => s.status === "Returned").length;
+    const returnedCount = activeShipments.filter(
+      (s) => RETURN_SHIPMENT_STATUSES.includes(s.status)
+    ).length;
     const pendingPickupCount = pickups.filter(
       (p) => p.status === "Scheduled" || p.status === "Assigned"
     ).length;
@@ -579,7 +965,10 @@ export function AppProvider({ children }) {
     activeShipments.forEach((s) => {
       const amt = parseInt((s.cod || "0").replace(/[^\d]/g, "")) || 0;
       if (s.status === "Delivered") codCollectedVal += amt;
-      else if (s.status !== "Returned") codPendingVal += amt;
+      else if (
+        !RETURN_SHIPMENT_STATUSES.includes(s.status) &&
+        !["Cancelled", "Cancellation Requested", "Parcel Lost", "Shipment Closed"].includes(s.status)
+      ) codPendingVal += amt;
     });
 
     const baseFarePerShipment = 180;
@@ -640,15 +1029,24 @@ export function AppProvider({ children }) {
     });
 
     const delivered = activeShipments.filter((s) => s.status === "Delivered").length;
-    const inTransit = activeShipments.filter((s) => s.status === "In Transit" || s.status === "Out for Delivery").length;
-    const pending = activeShipments.filter((s) => s.status === "Pending Pickup").length;
-    const returned = activeShipments.filter((s) => s.status === "Returned").length;
+    const inTransit = activeShipments.filter(
+      (s) => ACTIVE_SHIPMENT_STATUSES.includes(s.status) && !RETURN_SHIPMENT_STATUSES.includes(s.status)
+    ).length;
+    const pending = activeShipments.filter((s) => PICKUP_WAITING_STATUSES.includes(s.status)).length;
+    const returned = activeShipments.filter((s) => RETURN_SHIPMENT_STATUSES.includes(s.status)).length;
+    const other = activeShipments.filter((shipment) =>
+      shipment.status !== "Delivered" &&
+      !ACTIVE_SHIPMENT_STATUSES.includes(shipment.status) &&
+      !PICKUP_WAITING_STATUSES.includes(shipment.status) &&
+      !RETURN_SHIPMENT_STATUSES.includes(shipment.status)
+    ).length;
 
     const statusPie = [
       { name: "Delivered", value: delivered, color: "#16A34A" },
       { name: "In Transit", value: inTransit, color: settings.accentColor || "#F4C430" },
       { name: "Pending", value: pending, color: "#2563EB" },
       { name: "Returned", value: returned, color: "#DC2626" },
+      { name: "Other", value: other, color: "#64748B" },
     ];
 
     return { monthlyShipments, revenueData, statusPie };
@@ -663,6 +1061,8 @@ export function AppProvider({ children }) {
         currentUser,
         currentShipper,
         customers,
+        thirdPartyRiders,
+        deliverySheets,
         pickups,
         invoices,
         tickets,
@@ -677,7 +1077,12 @@ export function AppProvider({ children }) {
         addShipment,
         addBulkShipments,
         updateShipmentStatus,
+        markShipmentsPickedUp,
         deleteShipment,
+        addThirdPartyRider,
+        updateThirdPartyRider,
+        createDeliverySheet,
+        updateDeliverySheet,
         releaseCOD,
         addPickup,
         updatePickupStatus,

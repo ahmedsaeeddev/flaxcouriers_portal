@@ -2,7 +2,7 @@ import React, { useContext } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../../firebase/firebase";
 import {
-  LayoutDashboard, Package, PackagePlus, PackageSearch, Truck, Users, Wallet,
+  LayoutDashboard, Package, PackagePlus, PackageSearch, ClipboardList, Truck, Users, Wallet,
   FileText, BarChart3, Plug, LifeBuoy, Settings, User, LogOut, X, Boxes,
   ShieldCheck, ShoppingBag,
 } from "lucide-react";
@@ -10,7 +10,7 @@ import { AppContext } from "../../context/AppContext";
 import { ADMIN_NAV_SECTIONS, CLIENT_NAV_SECTIONS } from "../../lib/constants";
 
 const ICONS = {
-  LayoutDashboard, Package, PackagePlus, PackageSearch, Truck, Users, Wallet,
+  LayoutDashboard, Package, PackagePlus, PackageSearch, ClipboardList, Truck, Users, Wallet,
   FileText, BarChart3, Plug, LifeBuoy, Settings, User, Boxes,
 };
 
