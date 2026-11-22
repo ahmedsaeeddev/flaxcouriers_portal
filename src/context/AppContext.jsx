@@ -39,6 +39,10 @@ const formatRupees = (val) => {
   return `Rs ${val.toLocaleString()}`;
 };
 
+const formatFullRupees = (val) => {
+  return `Rs ${val.toLocaleString()}`;
+};
+
 const parseAmount = (value) => Number(String(value || 0).replace(/[^\d.-]/g, "")) || 0;
 const DELIVERY_ATTEMPT_RESULT_STATUSES = new Set([
   ...FAILED_DELIVERY_STATUSES,
@@ -64,6 +68,7 @@ export function AppProvider({ children }) {
   const [pickups, setPickups] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [areas, setAreas] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [settings, setSettings] = useState({
     companyName: "Flax Couriers",
@@ -72,7 +77,6 @@ export function AppProvider({ children }) {
     emailNotif: true,
     smsNotif: true,
     whatsappNotif: true,
-    apiKey: "flax_live_8f3a91b2c4e5d6a7",
     webhookUrl: "",
     rates: {
       expressOvernightKarachi: 200,
@@ -249,6 +253,16 @@ export function AppProvider({ children }) {
 
         unsubs.push(
           onSnapshot(
+            collection(db, "areas"),
+            (snap) => {
+              setAreas(snap.docs.map((d) => ({ _docId: d.id, ...d.data() })));
+            },
+            () => {} // optional fallback
+          )
+        );
+
+        unsubs.push(
+          onSnapshot(
             collection(db, "notifications"),
             (snap) => {
               const notifs = snap.docs
@@ -336,6 +350,7 @@ export function AppProvider({ children }) {
       receiverPhone: shipmentData.receiverPhone || "",
       receiverAddress: shipmentData.receiverAddress || "",
       weight: parseFloat(shipmentData.weight) || 1.0,
+      originCity: shipmentData.originCity || "",
       pieces: parseInt(shipmentData.pieces) || 1,
       parcelType: shipmentData.parcelType || "Parcel",
       serviceType: shipmentData.serviceType || "Standard",
@@ -868,6 +883,17 @@ export function AppProvider({ children }) {
       amount: `Rs ${amountVal.toLocaleString()}`,
       status: invoiceData.status || "Pending",
       date: getFormattedDate(),
+      ...(invoiceData.shipperId ? {
+        shipperId: invoiceData.shipperId,
+        shipperAccount: invoiceData.shipperAccount || "",
+        deliveredParcelCount: Number(invoiceData.deliveredParcelCount) || 0,
+        totalDeliveredParcelCount: Number(invoiceData.totalDeliveredParcelCount) || 0,
+        totalCODAmount: Number(invoiceData.totalCODAmount) || 0,
+        deliveryCharges: Number(invoiceData.deliveryCharges) || 0,
+        netPayable: Number(invoiceData.netPayable) || 0,
+        shipmentIds: Array.isArray(invoiceData.shipmentIds) ? invoiceData.shipmentIds : [],
+        parcelSummary: invoiceData.parcelSummary || {},
+      } : {}),
     };
     await addDoc(collection(db, "invoices"), newInvoice);
     await addNotification(`Generated Invoice ${id} for ${invoiceData.cust}`);
@@ -982,8 +1008,8 @@ export function AppProvider({ children }) {
       inTransit: inTransitCount.toLocaleString(),
       pendingPickups: pendingPickupCount.toLocaleString(),
       returned: returnedCount.toLocaleString(),
-      codPending: formatRupees(codPendingVal),
-      codCollected: formatRupees(codCollectedVal),
+      codPending: formatFullRupees(codPendingVal),
+      codCollected: formatFullRupees(codCollectedVal),
       totalRevenue: formatRupees(Math.round(totalRevenueVal)),
       onTimeRate,
       codPendingRaw: codPendingVal,
@@ -1066,6 +1092,7 @@ export function AppProvider({ children }) {
         pickups,
         invoices,
         tickets,
+        areas,
         settings,
         profile,
         notifications,

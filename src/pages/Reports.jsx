@@ -68,8 +68,8 @@ export default function Reports({ go }) {
       action: () => generateReportPDF("City_Wise", activeShipments, settings),
     },
     {
-      name: "Load Sheet (3 Copies)",
-      desc: "Customer + Operation + Courier",
+      name: "Load Sheet",
+      desc: "Single copy with parcel totals",
       action: () => generateLoadSheet(activeShipments, settings),
     },
   ];

@@ -125,10 +125,10 @@ export default function BulkBooking({ go }) {
 
           <div className="space-y-2.5">
             <Button variant="outline" className="w-full justify-start !py-2.5" onClick={handlePrintAllAWBs}>
-              <FileText size={15} /> Print All AWB Bills (2 Copies per Page)
+              <FileText size={15} /> Print AWBs (one per parcel)
             </Button>
             <Button variant="navy" className="w-full justify-start !py-2.5" onClick={handlePrintLoadSheet}>
-              <ClipboardList size={15} /> Print Load Sheet (3 Copies)
+              <ClipboardList size={15} /> Print Load Sheet
             </Button>
             <Button variant="outline" className="w-full justify-start !py-2.5" onClick={handleExportCSV}>
               <Download size={15} /> Export Tracking Report (CSV)

@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -18,6 +18,7 @@ import Field from "../components/ui/Field";
 import TableShell from "../components/ui/TableShell";
 import { AppContext } from "../context/AppContext";
 import {
+  BRAND_LOGO_URL,
   DELIVERY_ASSIGNABLE_STATUSES,
   DELIVERY_SHEET_OUTCOME_STATUSES,
   inputCls,
@@ -120,10 +121,12 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     customers,
     thirdPartyRiders,
     deliverySheets,
+    areas: dbAreas = [],
     createDeliverySheet,
     updateDeliverySheet,
     settings,
   } = useContext(AppContext);
+  const logoUrl = settings.logoUrl || BRAND_LOGO_URL;
   const [searchValue, setSearchValue] = useState("");
   const [riderFilter, setRiderFilter] = useState("All");
   const [branchFilter, setBranchFilter] = useState("All");
@@ -139,6 +142,8 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
   const [parcelSearch, setParcelSearch] = useState("");
   const [riderSearch, setRiderSearch] = useState("");
   const [riderDropdownOpen, setRiderDropdownOpen] = useState(false);
+  const [areaSearch, setAreaSearch] = useState('');
+  const [areaDropdownOpen, setAreaDropdownOpen] = useState(false);
   const [customArea, setCustomArea] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [printAfterSave, setPrintAfterSave] = useState("Yes");
@@ -179,7 +184,17 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     ...(Array.isArray(settings?.cities) ? settings.cities : []),
     form.origin,
   ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  // Merge areas from: Firestore areas collection, localStorage AreaPage, settings, shipments, deliverySheets
+  const localStorageAreas = (() => {
+    try {
+      const saved = localStorage.getItem("fcs_custom_areas");
+      if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) return parsed.map((a) => a.name).filter(Boolean); }
+    } catch (e) {}
+    return [];
+  })();
   const areaOptions = [...new Set([
+    ...localStorageAreas,
+    ...(Array.isArray(dbAreas) ? dbAreas.map((a) => a.name).filter(Boolean) : []),
     ...shipments.map((shipment) => shipment.area),
     ...customers.map((customer) => customer.area),
     ...thirdPartyRiders.map((rider) => rider.area),
@@ -187,6 +202,10 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     ...(Array.isArray(settings?.areas) ? settings.areas : []),
     form.area,
   ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const filteredAreaOptions = areaOptions.filter((area) => {
+    const q = areaSearch.trim().toLowerCase();
+    return !q || area.toLowerCase().includes(q);
+  });
   const preferredOrigin = settings?.defaultOrigin || settings?.originCity ||
     shipments.find((shipment) => shipment.city)?.city ||
     customers.find((customer) => customer.city)?.city ||
@@ -561,7 +580,9 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
           <div className="bg-white p-3 sm:p-4">
             <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded bg-[#0A2342] text-xs font-black text-[#F4C430]">FC</div>
+                <div className="flex h-9 w-9 items-center justify-center rounded bg-white p-0.5">
+                  <img src={logoUrl} alt="Flax Couriers" className="h-full w-full object-contain" />
+                </div>
                 <div>
                   <p className="text-sm font-bold leading-tight text-[#0A2342]">FLAX COURIERS</p>
                   <p className="text-[9px] text-slate-500">Courier &amp; Logistics</p>
@@ -643,16 +664,36 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
               </label>
               <label className="min-w-0 text-[11px] text-slate-800">
                 <span className="mb-1 block">Area:</span>
-                <select required value={form.area} onChange={(event) => {
-                  updateFormField("area", event.target.value);
-                  setCustomArea("");
-                }} className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs">
-                  <option value="">Select area</option>
-                  {areaOptions.filter((area) => area !== "Other").map((area) => <option key={area} value={area}>{area}</option>)}
-                  <option value="Other">Other</option>
-                </select>
+                <div className="relative">
+                  <div className="flex">
+                    <input
+                      required
+                      readOnly
+                      value={form.area}
+                      onClick={() => { setAreaDropdownOpen(true); setAreaSearch(""); }}
+                      placeholder="Select area"
+                      className="h-8 w-full min-w-0 cursor-pointer border border-slate-300 bg-white px-2 text-xs"
+                    />
+                    <button type="button" onClick={() => { setAreaDropdownOpen((o) => !o); setAreaSearch(""); }} className="h-8 w-8 shrink-0 border border-l-0 border-slate-300 bg-white text-slate-700">
+                      <ChevronDown size={14} className="mx-auto" />
+                    </button>
+                  </div>
+                  {areaDropdownOpen && (
+                    <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[200px] border border-slate-300 bg-white p-2 shadow-lg">
+                      <input autoFocus value={areaSearch} onChange={(e) => setAreaSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setAreaDropdownOpen(false); if (e.key === "Enter") { e.preventDefault(); if (filteredAreaOptions[0]) { updateFormField("area", filteredAreaOptions[0]); setCustomArea(""); setAreaDropdownOpen(false); } } }} placeholder="Search area" className="mb-2 h-8 w-full border border-slate-300 px-2 text-xs" />
+                      <div className="max-h-44 overflow-y-auto">
+                        {filteredAreaOptions.length === 0 ? (
+                          <p className="px-2 py-2 text-xs text-slate-500">No areas found.</p>
+                        ) : filteredAreaOptions.map((area) => (
+                          <button key={area} type="button" onClick={() => { updateFormField("area", area); setCustomArea(""); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs hover:bg-blue-50">{area}</button>
+                        ))}
+                        <button type="button" onClick={() => { updateFormField("area", "Other"); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 border-t border-slate-100 mt-1">Other (enter manually)</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {form.area === "Other" && (
-                  <input required value={customArea} onChange={(event) => setCustomArea(event.target.value)} placeholder="Enter area" className="mt-1 h-8 w-full border border-slate-300 bg-white px-2 text-xs" />
+                  <input required value={customArea} onChange={(e) => setCustomArea(e.target.value)} placeholder="Enter area" className="mt-1 h-8 w-full border border-slate-300 bg-white px-2 text-xs" />
                 )}
               </label>
               <label className="min-w-0 text-[11px] text-slate-800">
@@ -867,30 +908,37 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
             </Field>
             <Field label="Area *">
               <div className="space-y-2">
-                <select
-                  required
-                  value={form.area}
-                  disabled={sheetLocked}
-                  onChange={(event) => {
-                    updateFormField("area", event.target.value);
-                    setCustomArea("");
-                  }}
-                  className={inputCls}
-                >
-                  <option value="">Select area</option>
-                  {areaOptions.filter((area) => area !== "Other").map((area) => <option key={area} value={area}>{area}</option>)}
-                  <option value="Other">Other / enter manually</option>
-                </select>
+                <div className="relative">
+                  <div className="flex">
+                    <input
+                      required
+                      readOnly
+                      disabled={sheetLocked}
+                      value={form.area}
+                      onClick={() => { if (!sheetLocked) { setAreaDropdownOpen(true); setAreaSearch(""); } }}
+                      placeholder="Select area"
+                      className={inputCls + " cursor-pointer"}
+                    />
+                    <button type="button" disabled={sheetLocked} onClick={() => { if (!sheetLocked) { setAreaDropdownOpen((o) => !o); setAreaSearch(""); } }} className="h-8 w-8 shrink-0 border border-l-0 border-slate-300 bg-white text-slate-700 disabled:opacity-40">
+                      <ChevronDown size={14} className="mx-auto" />
+                    </button>
+                  </div>
+                  {areaDropdownOpen && !sheetLocked && (
+                    <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[220px] border border-slate-300 bg-white p-2 shadow-lg">
+                      <input autoFocus value={areaSearch} onChange={(e) => setAreaSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setAreaDropdownOpen(false); if (e.key === "Enter") { e.preventDefault(); if (filteredAreaOptions[0]) { updateFormField("area", filteredAreaOptions[0]); setCustomArea(""); setAreaDropdownOpen(false); } } }} placeholder="Search area" className="mb-2 h-8 w-full border border-slate-300 px-2 text-xs" />
+                      <div className="max-h-44 overflow-y-auto">
+                        {filteredAreaOptions.length === 0 ? (
+                          <p className="px-2 py-2 text-xs text-slate-500">No areas found.</p>
+                        ) : filteredAreaOptions.map((area) => (
+                          <button key={area} type="button" onClick={() => { updateFormField("area", area); setCustomArea(""); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs hover:bg-blue-50">{area}</button>
+                        ))}
+                        <button type="button" onClick={() => { updateFormField("area", "Other"); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 border-t border-slate-100 mt-1">Other (enter manually)</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {form.area === "Other" && (
-                  <input
-                    required
-                    value={customArea}
-                    onChange={(event) => setCustomArea(event.target.value)}
-                    disabled={sheetLocked}
-                    className={inputCls}
-                    placeholder="Enter delivery area"
-                    aria-label="Enter delivery area"
-                  />
+                  <input required value={customArea} onChange={(e) => setCustomArea(e.target.value)} disabled={sheetLocked} className={inputCls} placeholder="Enter delivery area" aria-label="Enter delivery area" />
                 )}
               </div>
             </Field>

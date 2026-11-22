@@ -11,6 +11,7 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Badge, { StatusPill } from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
+import { useLanguage } from "../context/LanguageContext";
 import {
   ACTIVE_SHIPMENT_STATUSES,
   PICKUP_WAITING_STATUSES,
@@ -20,6 +21,7 @@ import { generateLoadSheet, generateAWB } from "../lib/pdfGenerator";
 
 export default function Dashboard({ go }) {
   const { shipments, userShipments, stats, chartData, settings, firestoreError, userRole } = useContext(AppContext);
+  const { t } = useLanguage();
 
   const NAVY = settings.primaryColor || "#0A2342";
   const YELLOW = settings.accentColor || "#F4C430";
@@ -39,10 +41,9 @@ export default function Dashboard({ go }) {
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-sm animate-fadeUp">
           <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
           <div className="text-xs space-y-1">
-            <p className="font-bold">Firestore Security Rules Notice</p>
+            <p className="font-bold">{t("Firestore Security Rules Notice")}</p>
             <p>
               Firestore returned: <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">{firestoreError}</code>.
-              Make sure your Firebase Console rules permit read/write.
             </p>
           </div>
         </div>
@@ -55,16 +56,16 @@ export default function Dashboard({ go }) {
             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
               userRole === "admin" ? "bg-amber-400 text-[#0A2342]" : "bg-emerald-400 text-emerald-950"
             }`}>
-              {userRole === "admin" ? "👑 Courier Operations Admin" : "🛍️ Merchant / Shipper Hub"}
+              {userRole === "admin" ? t("👑 Courier Operations Admin") : t("🛍️ Merchant / Shipper Hub")}
             </span>
           </div>
           <h2 className="font-display font-bold text-xl lg:text-2xl text-white">
-            {userRole === "admin" ? "Ops Control Center" : "Merchant Control Center"}
+            {userRole === "admin" ? t("Ops Control Center") : t("Merchant Control Center")}
           </h2>
           <p className="text-xs text-white/70">
             {userRole === "admin"
-              ? "System-wide consignment tracking, driver dispatches & revenue analytics"
-              : "Track your store parcels, COD settlements, and download load sheets"}
+              ? t("System-wide consignment tracking, driver dispatches & revenue analytics")
+              : t("Track your store parcels, COD settlements, and download load sheets")}
           </p>
         </div>
 
@@ -72,19 +73,19 @@ export default function Dashboard({ go }) {
           {userRole === "client" ? (
             <>
               <Button onClick={() => go("create")} className="!bg-[#F4C430] !text-[#0A2342] hover:!bg-yellow-400 font-bold">
-                <Plus size={16} /> Book Parcel
+                <Plus size={16} /> {t("Book Parcel")}
               </Button>
               <Button variant="outline" onClick={() => generateLoadSheet(shipments, settings)} className="!bg-white/10 !ring-white/20 !text-white hover:!bg-white/20">
-                <BarChart3 size={16} /> Print Load Sheet
+                <BarChart3 size={16} /> {t("Print Load Sheet")}
               </Button>
             </>
           ) : (
             <>
               <Button onClick={() => go("shipments")} className="!bg-[#F4C430] !text-[#0A2342] hover:!bg-yellow-400 font-bold">
-                <Package size={16} /> All Merchant Parcels
+                <Package size={16} /> {t("All Merchant Parcels")}
               </Button>
               <Button variant="outline" onClick={() => go("pickups")} className="!bg-white/10 !ring-white/20 !text-white hover:!bg-white/20">
-                <Truck size={16} /> Dispatch Driver
+                <Truck size={16} /> {t("Dispatch Driver")}
               </Button>
             </>
           )}
@@ -97,70 +98,70 @@ export default function Dashboard({ go }) {
           <>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">Total Shipments</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("Total Shipments")}</span>
                 <div className="p-2 rounded-xl bg-blue-50 text-blue-600"><Package size={18} /></div>
               </div>
               <div className="font-display font-bold text-2xl text-[#0A2342]">{stats.total}</div>
-              <p className="text-[11px] text-slate-400 mt-1">Across all merchant stores</p>
+              <p className="text-[11px] text-slate-400 mt-1">{t("Across all merchant stores")}</p>
             </Card>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">Delivered</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("Delivered")}</span>
                 <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600"><CheckCircle2 size={18} /></div>
               </div>
               <div className="font-display font-bold text-2xl text-emerald-600">{stats.delivered}</div>
-              <p className="text-[11px] text-emerald-600 mt-1">On-time delivery rate 98.4%</p>
+              <p className="text-[11px] text-emerald-600 mt-1">{t("On-time delivery rate 98.4%")}</p>
             </Card>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">In Transit</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("In Transit")}</span>
                 <div className="p-2 rounded-xl bg-amber-50 text-amber-600"><Truck size={18} /></div>
               </div>
               <div className="font-display font-bold text-2xl text-amber-600">{stats.inTransit}</div>
-              <p className="text-[11px] text-slate-400 mt-1">Active rider routes</p>
+              <p className="text-[11px] text-slate-400 mt-1">{t("Active rider routes")}</p>
             </Card>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">COD Pending</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("COD Pending")}</span>
                 <div className="p-2 rounded-xl bg-purple-50 text-purple-600"><Wallet size={18} /></div>
               </div>
               <div className="font-display font-bold text-xl text-[#0A2342]">{stats.codPending}</div>
-              <p className="text-[11px] text-slate-400 mt-1">Ready for settlement payout</p>
+              <p className="text-[11px] text-slate-400 mt-1">{t("Ready for settlement payout")}</p>
             </Card>
           </>
         ) : (
           <>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">My Total Orders</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("My Total Orders")}</span>
                 <div className="p-2 rounded-xl bg-blue-50 text-blue-600"><Package size={18} /></div>
               </div>
               <div className="font-display font-bold text-2xl text-[#0A2342]">{clientShipments.length}</div>
-              <p className="text-[11px] text-slate-400 mt-1">Booked by my store</p>
+              <p className="text-[11px] text-slate-400 mt-1">{t("Booked by my store")}</p>
             </Card>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">Delivered</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("Delivered")}</span>
                 <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600"><CheckCircle2 size={18} /></div>
               </div>
               <div className="font-display font-bold text-2xl text-emerald-600">{clientDelivered}</div>
-              <p className="text-[11px] text-emerald-600 mt-1">Successfully completed</p>
+              <p className="text-[11px] text-emerald-600 mt-1">{t("Successfully completed")}</p>
             </Card>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">Active Delivery</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("Active Delivery")}</span>
                 <div className="p-2 rounded-xl bg-amber-50 text-amber-600"><Clock size={18} /></div>
               </div>
               <div className="font-display font-bold text-2xl text-amber-600">{clientInTransit}</div>
-              <p className="text-[11px] text-slate-400 mt-1">Rider out for delivery</p>
+              <p className="text-[11px] text-slate-400 mt-1">{t("Rider out for delivery")}</p>
             </Card>
             <Card className="p-5">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[12px] font-semibold text-slate-400 uppercase">COD Payout Due</span>
+                <span className="text-[12px] font-semibold text-slate-400 uppercase">{t("COD Payout Due")}</span>
                 <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600"><Wallet size={18} /></div>
               </div>
               <div className="font-display font-bold text-xl text-emerald-600">{stats.codCollected}</div>
-              <p className="text-[11px] text-slate-400 mt-1">Released cash payout</p>
+              <p className="text-[11px] text-slate-400 mt-1">{t("Released cash payout")}</p>
             </Card>
           </>
         )}
@@ -172,11 +173,11 @@ export default function Dashboard({ go }) {
           <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="font-display font-bold text-[#0A2342] text-[15px]">
-                {userRole === "admin" ? "Monthly Revenue & Booking Trends" : "My Store Shipping Activity"}
+                {userRole === "admin" ? t("Monthly Revenue & Booking Trends") : t("My Store Shipping Activity")}
               </h3>
-              <p className="text-[12px] text-slate-400">Live data synced from Firestore database</p>
+              <p className="text-[12px] text-slate-400">{t("Live data synced from Firestore database")}</p>
             </div>
-            <Badge tone="navy">Real-time</Badge>
+            <Badge tone="navy">{t("Real-time")}</Badge>
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -198,7 +199,7 @@ export default function Dashboard({ go }) {
         </Card>
 
         <Card className="p-6">
-          <h3 className="font-display font-bold text-[#0A2342] text-[15px] mb-4">Status Distribution</h3>
+          <h3 className="font-display font-bold text-[#0A2342] text-[15px] mb-4">{t("Status Distribution")}</h3>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -215,7 +216,7 @@ export default function Dashboard({ go }) {
             {chartData.statusPie.map((item, idx) => (
               <div key={item.name} className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: ["#22c55e", "#f59e0b", "#3b82f6", "#ef4444"][idx % 4] }} />
-                <span className="text-slate-600 truncate">{item.name}: <strong className="text-slate-800">{item.value}</strong></span>
+                <span className="text-slate-600 truncate">{t(item.name)}: <strong className="text-slate-800">{item.value}</strong></span>
               </div>
             ))}
           </div>
@@ -226,11 +227,11 @@ export default function Dashboard({ go }) {
       <Card className="p-6">
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h3 className="font-display font-bold text-[#0A2342] text-[15px]">Recent Consignments</h3>
-            <p className="text-[12px] text-slate-400">Click any row to print AWB bill or view tracking details</p>
+            <h3 className="font-display font-bold text-[#0A2342] text-[15px]">{t("Recent Consignments")}</h3>
+            <p className="text-[12px] text-slate-400">{t("Click any row to print AWB bill or view tracking details")}</p>
           </div>
           <Button variant="ghost" onClick={() => go("shipments")} className="!text-xs">
-            View All <ChevronRight size={14} />
+            {t("View All")} <ChevronRight size={14} />
           </Button>
         </div>
 
@@ -238,12 +239,12 @@ export default function Dashboard({ go }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-slate-400 border-b border-slate-100">
-                <th className="pb-3 pr-4">Tracking ID</th>
-                <th className="pb-3 pr-4">Consignee</th>
-                <th className="pb-3 pr-4">City</th>
-                <th className="pb-3 pr-4">COD Amount</th>
-                <th className="pb-3 pr-4">Status</th>
-                <th className="pb-3 text-right">Actions</th>
+                <th className="pb-3 pr-4">{t("Tracking ID")}</th>
+                <th className="pb-3 pr-4">{t("Consignee")}</th>
+                <th className="pb-3 pr-4">{t("City")}</th>
+                <th className="pb-3 pr-4">{t("COD Amount")}</th>
+                <th className="pb-3 pr-4">{t("Status")}</th>
+                <th className="pb-3 text-right">{t("Actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -251,8 +252,8 @@ export default function Dashboard({ go }) {
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-400">
                     {userRole === "admin"
-                      ? "No consignment records found in system."
-                      : "No shipments found. Click 'Book Parcel' to add data."}
+                      ? t("No consignment records found in system.")
+                      : t("No shipments found. Click 'Book Parcel' to add data.")}
                   </td>
                 </tr>
               ) : (
@@ -268,7 +269,7 @@ export default function Dashboard({ go }) {
                         onClick={() => generateAWB(s, settings)}
                         className="px-2.5 py-1 text-[11px] font-bold bg-[#FDF3D3] text-[#0A2342] rounded-lg hover:bg-yellow-300 transition"
                       >
-                        Print AWB
+                        {t("Print AWB Bill")}
                       </button>
                     </td>
                   </tr>

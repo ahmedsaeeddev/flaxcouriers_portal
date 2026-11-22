@@ -3,12 +3,12 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { auth, db } from "../firebase/firebase";
 import {
-  Truck, Mail, Lock, Eye, EyeOff, ArrowRight, RefreshCcw,
+  Mail, Lock, Eye, EyeOff, ArrowRight, RefreshCcw,
   ShieldCheck, Sparkles, AlertCircle, Hash
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Field from "../components/ui/Field";
-import { NAVY, YELLOW, YELLOW_DEEP, inputCls } from "../lib/constants";
+import { BRAND_LOGO_URL, NAVY, YELLOW, inputCls } from "../lib/constants";
 import { AppContext } from "../context/AppContext";
 
 const isAdminEmail = (emailStr) => {
@@ -24,12 +24,13 @@ const isAdminEmail = (emailStr) => {
 };
 
 export default function LoginPage() {
-  const { setUserRole } = useContext(AppContext);
+  const { setUserRole, settings } = useContext(AppContext);
   const [userId, setUserId]     = useState(""); // can be email OR account number e.g. 575181
   const [password, setPassword] = useState("");
   const [show, setShow]         = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
+  const logoUrl = settings.logoUrl || BRAND_LOGO_URL;
 
   const isEmail = (val) => val.includes("@");
 
@@ -112,8 +113,8 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="relative z-10 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${YELLOW}, ${YELLOW_DEEP})` }}>
-            <Truck size={22} color={NAVY} strokeWidth={2.5} />
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center bg-white p-1.5">
+            <img src={logoUrl} alt="Flax Couriers" className="h-full w-full object-contain" />
           </div>
           <div>
             <div className="font-display font-bold text-white text-[17px] leading-none">FLAX</div>
@@ -172,8 +173,8 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${YELLOW}, ${YELLOW_DEEP})` }}>
-              <Truck size={20} color={NAVY} />
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-white p-1.5">
+              <img src={logoUrl} alt="Flax Couriers" className="h-full w-full object-contain" />
             </div>
             <span className="font-display font-bold text-[#0A2342] text-lg">Flax Couriers</span>
           </div>

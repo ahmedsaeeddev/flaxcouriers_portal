@@ -8,6 +8,7 @@ import Button from "../components/ui/Button";
 import Field from "../components/ui/Field";
 import Badge from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
+import { useLanguage } from "../context/LanguageContext";
 import { inputCls } from "../lib/constants";
 import { generateAWB, generateLoadSheet } from "../lib/pdfGenerator";
 import AIScanModal from "../components/AIScanModal";
@@ -19,6 +20,7 @@ const CITIES = [
 
 export default function CreateShipment({ go }) {
   const { addShipment, settings, currentUser, currentShipper, customers, userRole } = useContext(AppContext);
+  const { t } = useLanguage();
   const isAdmin = userRole === "admin";
   const [trackingId] = useState("FLX93820" + Math.floor(100 + Math.random() * 899));
   const [submittedShipment, setSubmittedShipment] = useState(null);
@@ -175,6 +177,7 @@ export default function CreateShipment({ go }) {
     receiverPhone,
     receiverAddress,
     city,
+    originCity,
     weight: parsedWeight,
     pieces: parseInt(pieces) || 1,
     cod: parsedCod > 0 ? `Rs ${parsedCod.toLocaleString()}` : "Rs 0",
@@ -210,6 +213,7 @@ export default function CreateShipment({ go }) {
         receiverPhone,
         receiverAddress,
         city,
+        originCity,
         weight,
         pieces,
         codAmount: paymentType === "COD" ? codAmount : 0,
@@ -282,16 +286,16 @@ export default function CreateShipment({ go }) {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-              Single Booking
+              {t("Single Booking")}
             </span>
           </div>
           <h2 className="font-display font-bold text-[#0A2342] text-xl lg:text-2xl">
-            {isAdmin ? "Create Parcel for Shipper" : "Book Packet"}
+            {isAdmin ? t("Create Parcel for Shipper") : t("Book Parcel")}
           </h2>
           <p className="text-[12.5px] text-slate-400">
             {isAdmin
-              ? "Select a shipper and enter the consignee and parcel details."
-              : "Enter consignment details for instant automated waybill booking"}
+              ? t("Select a shipper and enter the consignee and parcel details.")
+              : t("Enter consignment details for instant automated waybill booking")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -299,15 +303,15 @@ export default function CreateShipment({ go }) {
             onClick={() => setAiModalOpen(true)} 
             className="!bg-[#F4C430] hover:!bg-yellow-400 !text-[#0A2342] font-bold text-xs flex items-center gap-1.5"
           >
-            <Sparkles size={13} className="animate-pulse" /> AI Parcel Scan
+            <Sparkles size={13} className="animate-pulse" /> {t("AI Parcel Scan")}
           </Button>
           {!isAdmin && (
             <Button variant="outline" onClick={() => go("bulk")}>
-              + Bulk CSV Booking
+              {t("+ Bulk CSV Booking")}
             </Button>
           )}
           <Button variant="navy" onClick={() => go("shipments")}>
-            View All Bookings
+            {t("View All Bookings")}
           </Button>
         </div>
       </div>
@@ -319,10 +323,10 @@ export default function CreateShipment({ go }) {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="text-emerald-400" size={20} />
-                <span className="font-display font-bold text-lg">Consignment Booked Successfully!</span>
+                <span className="font-display font-bold text-lg">{t("Consignment Booked Successfully!")}</span>
               </div>
               <p className="text-xs text-white/80 font-mono">
-                Tracking ID: <strong className="text-amber-300 text-sm">{submittedShipment.id}</strong> · Destination: <strong>{submittedShipment.city}</strong> · Consignee: <strong>{submittedShipment.cust}</strong>
+                {t("Tracking ID")}: <strong className="text-amber-300 text-sm">{submittedShipment.id}</strong> · {t("Destination")}: <strong>{submittedShipment.city}</strong> · {t("Consignee")}: <strong>{submittedShipment.cust}</strong>
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -330,17 +334,17 @@ export default function CreateShipment({ go }) {
                 onClick={() => generateAWB(submittedShipment, settings)}
                 className="!bg-[#F4C430] hover:!bg-yellow-400 !text-[#0A2342] text-xs font-bold"
               >
-                <FileText size={14} /> Print AWB Bill
+                <FileText size={14} /> {t("Print AWB Bill")}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => generateLoadSheet([submittedShipment], settings)}
                 className="!bg-white/10 !ring-white/20 !text-white text-xs"
               >
-                <ClipboardList size={14} /> Print Load Sheet
+                <ClipboardList size={14} /> {t("Print Load Sheet")}
               </Button>
               <Button variant="ghost" onClick={handleReset} className="!text-white/60 hover:!text-white text-xs">
-                + Book Another Packet
+                {t("+ Book Another Packet")}
               </Button>
             </div>
           </div>
@@ -357,7 +361,7 @@ export default function CreateShipment({ go }) {
               <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-xs">
                 <Package size={15} />
               </div>
-              <h3 className="font-display font-bold text-[#0A2342] text-sm">Basic Information</h3>
+              <h3 className="font-display font-bold text-[#0A2342] text-sm">{t("Basic Information")}</h3>
             </div>
 
             <Field label="Division *">
@@ -417,10 +421,10 @@ export default function CreateShipment({ go }) {
                 <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
                   <User size={15} />
                 </div>
-                <h3 className="font-display font-bold text-[#0A2342] text-sm">Shipper Details</h3>
+                <h3 className="font-display font-bold text-[#0A2342] text-sm">{t("Shipper Details")}</h3>
               </div>
-              <span className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full">
-                {isAdmin ? "Admin Booking" : "🔒 Locked Profile"}
+              <span className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                {isAdmin ? t("Admin Booking") : t("🔒 Locked Profile")}
               </span>
             </div>
 
@@ -486,7 +490,7 @@ export default function CreateShipment({ go }) {
               <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
                 <Truck size={15} />
               </div>
-              <h3 className="font-display font-bold text-[#0A2342] text-sm">Consignee Detail</h3>
+              <h3 className="font-display font-bold text-[#0A2342] text-sm">{t("Consignee Details")}</h3>
             </div>
 
             {/* Quick Consignee Search */}
@@ -497,7 +501,7 @@ export default function CreateShipment({ go }) {
                   <input
                     value={consigneeSearch}
                     onChange={(e) => { setConsigneeSearch(e.target.value); setShowDropdown(true); }}
-                    placeholder="Search name or phone..."
+                    placeholder={t("Search name or phone...")}
                     className={`${inputCls} pl-9`}
                   />
                 </div>
@@ -516,7 +520,7 @@ export default function CreateShipment({ go }) {
                         <div className="font-bold text-amber-300">{c.name}</div>
                         <div className="text-[10px] text-slate-400">{c.phone} · {c.city}</div>
                       </div>
-                      <span className="text-[10px] text-emerald-400">Select</span>
+                      <span className="text-[10px] text-emerald-400">{t("Select")}</span>
                     </button>
                   ))}
                 </div>
@@ -558,7 +562,7 @@ export default function CreateShipment({ go }) {
                 <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-xs">
                   <CreditCard size={15} />
                 </div>
-                <h3 className="font-display font-bold text-[#0A2342] text-sm">Payment Information</h3>
+                <h3 className="font-display font-bold text-[#0A2342] text-sm">{t("Payment Information")}</h3>
               </div>
 
               {/* Payment Type Toggle */}
@@ -573,7 +577,7 @@ export default function CreateShipment({ go }) {
                         : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    Cash On Delivery
+                    {t("Cash On Delivery")}
                   </button>
                   <button
                     type="button"
@@ -584,7 +588,7 @@ export default function CreateShipment({ go }) {
                         : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    Prepaid
+                    {t("Prepaid")}
                   </button>
                 </div>
               </Field>
@@ -614,29 +618,29 @@ export default function CreateShipment({ go }) {
               {/* Live Rate Box */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
                 <div className="flex justify-between items-center text-[11px] pb-1 border-b border-slate-200/60 font-semibold">
-                  <span className="text-slate-500">Tariff Zone:</span>
+                  <span className="text-slate-500">{t("Tariff Zone:")}</span>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                     isWithinKarachi ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
                   }`}>
-                    {isWithinKarachi ? "Karachi (Same City)" : `Out Of City (${city})`}
+                    {isWithinKarachi ? t("Karachi (Same City)") : `${t("Out Of City")} (${city})`}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-500">
-                  <span>Base Fare ({serviceType})</span>
+                  <span>{t("Base Fare")} ({serviceType})</span>
                   <span className="font-semibold text-slate-700">Rs {baseFare}</span>
                 </div>
                 <div className="flex justify-between text-slate-500">
-                  <span>Weight Surcharge ({weight}kg)</span>
+                  <span>{t("Weight Surcharge")} ({weight}kg)</span>
                   <span className="font-semibold text-slate-700">Rs {weightSurcharge}</span>
                 </div>
                 {paymentType === "COD" && (
                   <div className="flex justify-between text-slate-500">
-                    <span>COD Handling Fee</span>
+                    <span>{t("COD Handling Fee")}</span>
                     <span className="font-semibold text-slate-700">Rs {codHandling}</span>
                   </div>
                 )}
                 <div className="flex justify-between pt-1.5 border-t border-slate-200 font-bold text-[#0A2342]">
-                  <span>Estimated Total</span>
+                  <span>{t("Estimated Total")}</span>
                   <span className="text-amber-600 font-bold text-sm">Rs {totalRate}</span>
                 </div>
               </div>
@@ -645,10 +649,10 @@ export default function CreateShipment({ go }) {
             {/* Action Buttons */}
             <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
               <Button type="button" variant="ghost" onClick={handleReset} className="w-1/2 !py-2.5 !text-xs !bg-slate-100 hover:!bg-slate-200 !text-slate-700">
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button type="submit" disabled={submitting} className="w-1/2 !py-2.5 !text-xs font-bold !bg-emerald-500 hover:!bg-emerald-600 !text-white">
-                {submitting ? <RefreshCcw size={14} className="animate-spin" /> : "Submit"}
+                {submitting ? <RefreshCcw size={14} className="animate-spin" /> : t("Submit")}
               </Button>
             </div>
           </Card>

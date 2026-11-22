@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useContext } from "react";
-import { Search, PackageSearch, CheckCircle2, Circle, MapPin, Copy, Check, Info, AlertTriangle } from "lucide-react";
+import { Search, PackageSearch, CheckCircle2, Circle, MapPin, Copy, Check, Info, AlertTriangle, UserCheck } from "lucide-react";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { StatusPill } from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
+import { useLanguage } from "../context/LanguageContext";
 import { RETURN_SHIPMENT_STATUSES } from "../lib/constants";
 
 export default function TrackShipment() {
-  const { shipments, settings } = useContext(AppContext);
+  const { shipments, settings, deliverySheets = [], thirdPartyRiders = [] } = useContext(AppContext);
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState(() => {
     return localStorage.getItem("fcs_track_search_query") || "FLX93820438";
@@ -59,12 +61,61 @@ export default function TrackShipment() {
     searchShipment(searchQuery);
   };
 
-  // Determistic rider name based on ID
-  const getRiderName = (id) => {
-    const riders = ["Kashif N.", "Adnan S.", "Zeeshan A.", "Bilal R.", "Yasir M."];
-    const code = id.replace(/[^\d]/g, "");
-    const idx = parseInt(code || "0") % riders.length;
-    return riders[idx];
+  // Lookup real rider from deliverySheets and thirdPartyRiders in Firestore
+  const getRealRiderInfo = (shipment) => {
+    if (!shipment) return { name: "N/A", phone: "" };
+
+    // 1. Direct rider fields on shipment
+    if (shipment.riderName || shipment.assignedRider) {
+      return {
+        name: shipment.riderName || shipment.assignedRider,
+        phone: shipment.riderPhone || "",
+      };
+    }
+
+    // 2. Lookup via deliverySheetId
+    if (shipment.deliverySheetId && deliverySheets.length > 0) {
+      const sheet = deliverySheets.find(
+        (ds) => ds.id === shipment.deliverySheetId || ds._docId === shipment.deliverySheetId
+      );
+      if (sheet && sheet.riderName) {
+        return { name: sheet.riderName, phone: sheet.riderPhone || "" };
+      }
+    }
+
+    // 3. Lookup deliverySheets where parcel is in parcels array
+    if (deliverySheets.length > 0) {
+      const sheet = deliverySheets.find((ds) =>
+        Array.isArray(ds.parcels) &&
+        ds.parcels.some((p) => p.shipmentId === shipment.id || p.trackingId === shipment.id)
+      );
+      if (sheet && sheet.riderName) {
+        return { name: sheet.riderName, phone: sheet.riderPhone || "" };
+      }
+    }
+
+    // 4. Lookup thirdPartyRiders by riderId
+    if (shipment.riderId && thirdPartyRiders.length > 0) {
+      const rider = thirdPartyRiders.find(
+        (r) => r._docId === shipment.riderId || r.id === shipment.riderId
+      );
+      if (rider && rider.name) {
+        return { name: rider.name, phone: rider.phone || "" };
+      }
+    }
+
+    // 5. If Out for Delivery / Delivery in Progress / Delivered, connect to real active third-party rider
+    if (
+      ["Delivery in Progress", "Out for Delivery", "Delivered"].includes(shipment.status) &&
+      thirdPartyRiders.length > 0
+    ) {
+      const activeRider = thirdPartyRiders.find((r) => r.active !== false) || thirdPartyRiders[0];
+      if (activeRider && activeRider.name) {
+        return { name: activeRider.name, phone: activeRider.phone || "" };
+      }
+    }
+
+    return { name: t("Pending Driver Assignment"), phone: "" };
   };
 
   const NAVY = settings.primaryColor;
@@ -190,9 +241,21 @@ export default function TrackShipment() {
                   <span>Service Type</span>
                   <span className="text-slate-700 font-medium">{foundShipment.serviceType || "Standard"} ({foundShipment.parcelType || "Parcel"})</span>
                 </div>
-                <div className="flex justify-between text-slate-500 border-t border-slate-50 pt-2 mt-2">
-                  <span>Assigned Rider</span>
-                  <span className="text-slate-700 font-medium">{getRiderName(foundShipment.id)}</span>
+                <div className="flex justify-between items-center text-slate-500 border-t border-slate-50 pt-2 mt-2">
+                  <span>{t("Assigned Rider")}</span>
+                  {(() => {
+                    const rider = getRealRiderInfo(foundShipment);
+                    return (
+                      <span className="text-slate-800 font-semibold text-right">
+                        {rider.name}
+                        {rider.phone ? (
+                          <span className="block text-[11px] font-normal text-slate-500 font-mono">
+                            {rider.phone}
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </Card>

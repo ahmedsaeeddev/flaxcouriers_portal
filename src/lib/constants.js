@@ -4,6 +4,7 @@ export const NAVY_LIGHT = "#123566";
 export const NAVY_SOFT = "#16305A";
 export const YELLOW = "#F4C430";
 export const YELLOW_DEEP = "#DDA80E";
+export const BRAND_LOGO_URL = "/logo.png";
 
 export const SHIPMENT_STATUSES = [
   "Pending",
@@ -318,61 +319,71 @@ export const statusStyle = (status) => {
 export const inputCls =
   "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-[#F4C430] focus:ring-4 focus:ring-[#F4C430]/20";
 
-// Admin / Courier Operations Navigation
+// Admin / Courier Operations Navigation (Matching OMS Ledger Reference)
 export const ADMIN_NAV_SECTIONS = [
-  { section: "Operations Control", items: [{ id: "dashboard", label: "Ops Control Center", icon: "LayoutDashboard" }] },
+  { section: "DASHBOARD", items: [{ id: "dashboard", label: "Dashboard", icon: "LayoutDashboard" }] },
   {
-    section: "Consignment Monitoring",
+    section: "BOOKINGS",
     items: [
-      { id: "shipments", label: "All Merchant Parcels", icon: "Package" },
-      { id: "create", label: "Create Parcel for Shipper", icon: "PackagePlus" },
+      { id: "shipments", label: "My Stores Orders", icon: "Package" },
+      { id: "create", label: "Create Booking", icon: "PackagePlus" },
+      { id: "bulk", label: "Order Sync / Bulk CSV", icon: "Boxes" },
+      { id: "area", label: "Area", icon: "ClipboardList" },
+      { id: "reasons", label: "Reasons List", icon: "FileText" },
       { id: "pickup-sheet", label: "Pickup Sheet", icon: "ClipboardList" },
-      { id: "track", label: "Live Parcel Tracker", icon: "PackageSearch" },
+      { id: "track", label: "Parcel Status Tracking", icon: "PackageSearch" },
       { id: "pickups", label: "Dispatch Drivers & Pickups", icon: "Truck" },
     ],
   },
   {
-    section: "Third-Party Couriers",
+    section: "THIRD PARTY COURIERS",
     items: [
       { id: "third-party-riders", label: "Third-Party Riders", icon: "Users" },
       { id: "delivery-sheets", label: "Delivery Sheets", icon: "ClipboardList" },
     ],
   },
   {
-    section: "Shippers & Finance",
+    section: "STORES / ACCOUNTS",
     items: [
       { id: "customers", label: "Shipper Directory & Accounts", icon: "Users" },
       { id: "cod", label: "COD Payout Approvals", icon: "Wallet" },
       { id: "invoices", label: "Merchant Invoices", icon: "FileText" },
+    ],
+  },
+  {
+    section: "OPERATION",
+    items: [
       { id: "reports", label: "Operational Reports", icon: "BarChart3" },
-      { id: "api", label: "API & Webhooks Config", icon: "Plug" },
+      { id: "api", label: "API & Store Integration", icon: "Plug" },
       { id: "support", label: "Helpdesk Agent Inbox", icon: "LifeBuoy" },
     ],
   },
   {
-    section: "System Config",
+    section: "SETTINGS",
     items: [
       { id: "settings", label: "Workspace Branding", icon: "Settings" },
-      { id: "profile", label: "Ops Admin Profile", icon: "User" },
+      { id: "profile", label: "Admin Profile", icon: "User" },
     ],
   },
 ];
 
-// Client / Shipper Portal Navigation (Parcel Creation Belongs Here)
+// Client / Shipper Portal Navigation
 export const CLIENT_NAV_SECTIONS = [
-  { section: "Merchant Hub", items: [{ id: "dashboard", label: "Merchant Dashboard", icon: "LayoutDashboard" }] },
+  { section: "DASHBOARD", items: [{ id: "dashboard", label: "Merchant Dashboard", icon: "LayoutDashboard" }] },
   {
-    section: "Parcel Booking",
+    section: "BOOKINGS",
     items: [
-      { id: "shipments", label: "My Bookings & Manifest", icon: "Package" },
-      { id: "create", label: "+ Book Single Parcel", icon: "PackagePlus" },
+      { id: "shipments", label: "My Stores Orders", icon: "Package" },
+      { id: "create", label: "+ Create Booking", icon: "PackagePlus" },
       { id: "bulk", label: "+ Bulk CSV Booking", icon: "Boxes" },
-      { id: "track", label: "Track My Parcel", icon: "PackageSearch" },
+      { id: "area", label: "Area", icon: "ClipboardList" },
+      { id: "reasons", label: "Reasons List", icon: "FileText" },
+      { id: "track", label: "Parcel Status Tracking", icon: "PackageSearch" },
       { id: "pickups", label: "Request Warehouse Pickup", icon: "Truck" },
     ],
   },
   {
-    section: "Finance & Integration",
+    section: "STORES / ACCOUNTS",
     items: [
       { id: "cod", label: "My COD Payouts", icon: "Wallet" },
       { id: "invoices", label: "My Invoices", icon: "FileText" },
@@ -382,7 +393,7 @@ export const CLIENT_NAV_SECTIONS = [
     ],
   },
   {
-    section: "Store Settings",
+    section: "SETTINGS",
     items: [
       { id: "settings", label: "Store Preferences", icon: "Settings" },
       { id: "profile", label: "Shipper Profile", icon: "User" },
@@ -392,9 +403,11 @@ export const CLIENT_NAV_SECTIONS = [
 
 export const PAGE_TITLES = {
   dashboard: ["Dashboard", "Welcome back — operational overview"],
-  shipments: ["Shipments", "Manage and track consignment records"],
+  shipments: ["Parcel Ledger", "My Stores Orders — Consignment records and dispatch manifests"],
   create: ["Book Parcel", "Create a new consignment"],
   bulk: ["Bulk Booking", "Import batch consignments via CSV"],
+  area: ["Area", "Select area to change — Karachi coverage hubs"],
+  reasons: ["Reasons List", "Select reasons list to change — Delivery exception reasons"],
   track: ["Track Shipment", "Live tracking & timeline"],
   pickups: ["Pickup Requests", "Driver pickup dispatches"],
   customers: ["Shippers & Merchants", "Manage shipper accounts & credentials"],

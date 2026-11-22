@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import Card from "./Card";
 import { YELLOW } from "../../lib/constants";
+import { useLanguage } from "../../context/LanguageContext";
 
 export default function TableShell({
   title,
@@ -16,6 +17,7 @@ export default function TableShell({
   searchPlaceholder = "Search...",
   pageSize = 10,
 }) {
+  const { t } = useLanguage();
   const [currentPage, setCurrentPage] = useState(1);
 
   const totalPages = Math.ceil(rows.length / pageSize) || 1;
@@ -30,8 +32,8 @@ export default function TableShell({
     <div className="p-5 lg:p-8 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-display font-bold text-[#0A2342] text-xl">{title}</h2>
-          <p className="text-[12.5px] text-slate-400">{subtitle}</p>
+          <h2 className="font-display font-bold text-[#0A2342] text-xl">{t(title)}</h2>
+          {subtitle && <p className="text-[12.5px] text-slate-400">{t(subtitle)}</p>}
         </div>
         <div className="flex items-center gap-2">{actions}</div>
       </div>
@@ -46,7 +48,7 @@ export default function TableShell({
                 setCurrentPage(1);
                 if (onSearchChange) onSearchChange(e);
               }}
-              placeholder={searchPlaceholder}
+              placeholder={t(searchPlaceholder)}
               className="bg-transparent outline-none text-sm w-full text-slate-700 placeholder:text-slate-400"
             />
           </div>
@@ -55,14 +57,14 @@ export default function TableShell({
 
         <div className="overflow-x-auto scrollbar-thin">
           {rows.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-sm">No records found.</div>
+            <div className="p-8 text-center text-slate-400 text-sm">{t("No records found.")}</div>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[11px] text-slate-400 uppercase tracking-wide border-b border-slate-100">
                   {columns.map((c) => (
                     <th key={c} className="pb-3 font-semibold pr-4">
-                      {c}
+                      {t(c)}
                     </th>
                   ))}
                 </tr>
@@ -74,7 +76,7 @@ export default function TableShell({
 
         <div className="flex items-center justify-between pt-4 mt-2 border-t border-slate-100">
           <span className="text-[12.5px] text-slate-400">
-            Showing {startDisplay}–{endDisplay} of {rows.length}
+            {t("Showing")} {startDisplay}–{endDisplay} {t("of")} {rows.length}
           </span>
           <div className="flex items-center gap-1.5">
             <button

@@ -32,7 +32,6 @@ const defaultSettings = {
   emailNotif: true,
   smsNotif: true,
   whatsappNotif: true,
-  apiKey: "flax_live_8f3a91b2c4e5d6a7",
   webhookUrl: "",
   rates: {
     expressOvernightKarachi: 200,

@@ -1,8 +1,8 @@
 import jsPDF from "jspdf";
-import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
 import {
   ACTIVE_SHIPMENT_STATUSES,
+  BRAND_LOGO_URL,
   FAILED_DELIVERY_STATUSES,
   RETURN_SHIPMENT_STATUSES,
 } from "./constants";
@@ -23,20 +23,6 @@ function getBarcodeDataURL(text) {
     return canvas.toDataURL("image/png");
   } catch (e) {
     console.error("Barcode generation error:", e);
-    return null;
-  }
-}
-
-// ─── Real Scannable QR Code DataURL Generator (QRCode) ─────────────────────────
-async function getQRCodeDataURL(text) {
-  try {
-    return await QRCode.toDataURL(text || "https://flaxcouriers.com", {
-      margin: 1,
-      width: 250,
-      color: { dark: "#000000", light: "#ffffff" },
-    });
-  } catch (e) {
-    console.error("QR generation error:", e);
     return null;
   }
 }
@@ -67,8 +53,225 @@ function drawRect(doc, x, y, w, h, fill = false) {
   }
 }
 
+function drawTextLogo(doc, companyName, x, y, width, height, settings = {}) {
+  const navy = settings.primaryColor || "#0A2342";
+  doc.setTextColor(navy);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(String(companyName || "FLAX COURIERS").toUpperCase(), x, y + height / 2, {
+    maxWidth: width,
+    baseline: "middle",
+  });
+}
+
+function decodeSvgDataUrl(dataUrl) {
+  const commaIndex = dataUrl.indexOf(",");
+  const payload = dataUrl.slice(commaIndex + 1);
+  if (!dataUrl.slice(0, commaIndex).includes(";base64")) {
+    return decodeURIComponent(payload);
+  }
+  const bytes = Uint8Array.from(atob(payload), (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+const logoDataUrlCache = new Map();
+
+async function getLogoDataUrl(source) {
+  if (source.startsWith("data:image/")) return source;
+  if (logoDataUrlCache.has(source)) return logoDataUrlCache.get(source);
+
+  const response = await fetch(source);
+  if (!response.ok) throw new Error(`Could not load logo image (${response.status}).`);
+  const blob = await response.blob();
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Could not read the logo image."));
+    reader.readAsDataURL(blob);
+  });
+  logoDataUrlCache.set(source, dataUrl);
+  return dataUrl;
+}
+
+async function addBrandLogo(doc, settings, companyName, x, y, width, height) {
+  const logo = settings.logoUrl || BRAND_LOGO_URL;
+
+  try {
+    const logoDataUrl = await getLogoDataUrl(logo);
+    if (logoDataUrl.startsWith("data:image/svg+xml")) {
+      const svg = decodeSvgDataUrl(logoDataUrl);
+      const viewBox = /viewBox=["']\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)\s*["']/i.exec(svg);
+      const svgWidth = viewBox ? Number(viewBox[1]) : width;
+      const svgHeight = viewBox ? Number(viewBox[2]) : height;
+      const scale = Math.min(width / svgWidth, height / svgHeight);
+      const imageWidth = svgWidth * scale;
+      const imageHeight = svgHeight * scale;
+      await doc.addSvgAsImage(
+        svg,
+        x + (width - imageWidth) / 2,
+        y + (height - imageHeight) / 2,
+        imageWidth,
+        imageHeight
+      );
+      return;
+    }
+
+    const dimensions = doc.getImageProperties(logoDataUrl);
+    const scale = Math.min(width / dimensions.width, height / dimensions.height);
+    const imageWidth = dimensions.width * scale;
+    const imageHeight = dimensions.height * scale;
+    doc.addImage(
+      logoDataUrl,
+      x + (width - imageWidth) / 2,
+      y + (height - imageHeight) / 2,
+      imageWidth,
+      imageHeight
+    );
+  } catch (error) {
+    console.error("Could not render the configured company logo:", error);
+    drawTextLogo(doc, companyName, x, y, width, height, settings);
+  }
+}
+
+function drawMinimalAWB(doc, shipment, settings, barcodeDataUrl, top = 4) {
+  const companyName = settings.companyName || "Flax Couriers";
+  const trackingId = shipment.id || shipment.trackingId || "-";
+  const codAmount = Number(shipment.codAmount || String(shipment.cod || "").replace(/[^\d.-]/g, "")) || 0;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const left = 7;
+  const width = pageWidth - left * 2;
+  const headerHeight = 20;
+  const detailsHeaderHeight = 7;
+  const detailsHeight = 32;
+  const shipperHeaderHeight = 7;
+  const shipperHeight = 11;
+  const detailsY = top + headerHeight;
+  const detailsBodyY = detailsY + detailsHeaderHeight;
+  const shipperHeaderY = detailsBodyY + detailsHeight;
+  const shipperBodyY = shipperHeaderY + shipperHeaderHeight;
+  const paymentWidth = 40;
+  const consigneeWidth = width - paymentWidth;
+  const sourceInstructions = String(shipment.instructions || "");
+  const productMatch = /\bProduct:\s*(.*?)(?:\.\s|$)/i.exec(sourceInstructions);
+  const product = shipment.productDesc || (productMatch && productMatch[1]) || "—";
+  const remarks = sourceInstructions
+    .replace(/\bProduct:\s*.*?(?:\.\s|$)/i, "")
+    .trim() || "—";
+  const createdAt = Number(shipment.createdAt);
+  const createdDate = Number.isFinite(createdAt) && createdAt > 0 ? new Date(createdAt) : null;
+  const bookingDate = createdDate
+    ? createdDate.toISOString().slice(0, 10)
+    : shipment.bookingDate || shipment.date || new Date().toISOString().slice(0, 10);
+  const originCity = shipment.originCity || shipment.senderCity || "—";
+  const destinationCity = shipment.city || "—";
+  const cell = (x, y, cellWidth, cellHeight) => {
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.35);
+    doc.rect(x, y, cellWidth, cellHeight);
+  };
+  const centeredText = (text, x, y, cellWidth, size, bold = false) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(0, 0, 0);
+    doc.text(String(text || "—"), x + cellWidth / 2, y, {
+      align: "center",
+      maxWidth: cellWidth - 3,
+    });
+  };
+
+  return addBrandLogo(doc, settings, companyName, left + 2, top + 2, 34, 16).then(() => {
+    const logoWidth = 37;
+    const trackingWidth = 58;
+    const originWidth = 54;
+    const destinationWidth = width - logoWidth - trackingWidth - originWidth;
+    const trackingX = left + logoWidth;
+    const originX = trackingX + trackingWidth;
+    const destinationX = originX + originWidth;
+    const metadataY = top + 11;
+
+    cell(left, top, logoWidth, headerHeight);
+    cell(trackingX, top, trackingWidth, headerHeight);
+    cell(originX, top, originWidth, headerHeight);
+    cell(destinationX, top, destinationWidth, headerHeight);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("ID :", trackingX + 4, top + 5);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(String(trackingId), trackingX + 13, top + 5, { maxWidth: trackingWidth - 16 });
+    if (barcodeDataUrl) {
+      doc.addImage(barcodeDataUrl, "PNG", trackingX + 4, top + 7, trackingWidth - 8, 11);
+    } else {
+      drawBarcodeFallback(doc, trackingX + 4, top + 7, trackingWidth - 8, 11);
+    }
+
+    const metadataHalf = originWidth / 2;
+    doc.line(originX, metadataY, destinationX + destinationWidth, metadataY);
+    doc.line(originX + metadataHalf, metadataY, originX + metadataHalf, top + headerHeight);
+    doc.line(destinationX + destinationWidth / 2, metadataY, destinationX + destinationWidth / 2, top + headerHeight);
+    centeredText("Origin", originX, top + 4.5, originWidth, 8);
+    centeredText(originCity, originX, top + 10, originWidth, 10, true);
+    centeredText("Destination", destinationX, top + 4.5, destinationWidth, 8);
+    centeredText(destinationCity, destinationX, top + 10, destinationWidth, 10, true);
+    centeredText("Date", originX, metadataY + 3.5, metadataHalf, 7);
+    centeredText(bookingDate, originX, metadataY + 8, metadataHalf, 8, true);
+    centeredText("Type", originX + metadataHalf, metadataY + 3.5, metadataHalf, 7);
+    centeredText(codAmount > 0 ? "COD" : "Non COD", originX + metadataHalf, metadataY + 8, metadataHalf, 8, true);
+    const destinationHalf = destinationWidth / 2;
+    centeredText("Piece", destinationX, metadataY + 3.5, destinationHalf, 7);
+    centeredText(`${shipment.pieces || 1} Pcs`, destinationX, metadataY + 8, destinationHalf, 8, true);
+    centeredText("Weight", destinationX + destinationHalf, metadataY + 3.5, destinationHalf, 7);
+    centeredText(`${shipment.weight || 1} Kg`, destinationX + destinationHalf, metadataY + 8, destinationHalf, 8, true);
+
+    cell(left, detailsY, consigneeWidth, detailsHeaderHeight);
+    cell(left + consigneeWidth, detailsY, paymentWidth, detailsHeaderHeight);
+    centeredText("Consignee Details", left, detailsY + 5, consigneeWidth, 9);
+    centeredText("Payment Details", left + consigneeWidth, detailsY + 5, paymentWidth, 9);
+    cell(left, detailsBodyY, consigneeWidth, detailsHeight);
+    cell(left + consigneeWidth, detailsBodyY, paymentWidth, detailsHeight);
+
+    const textX = left + 1.5;
+    const textWidth = consigneeWidth - 3;
+    const consignee = shipment.cust || shipment.recipient || shipment.receiverName || "—";
+    const addressLines = doc.splitTextToSize(`Address: ${shipment.receiverAddress || "—"}`, textWidth);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(`Name: ${consignee}`, textX, detailsBodyY + 5, { maxWidth: textWidth });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.text(addressLines.slice(0, 2), textX, detailsBodyY + 9);
+    doc.text(`Mobile: ${shipment.receiverPhone || "—"}`, textX, detailsBodyY + 17);
+    doc.text(`Order ID: ${shipment.orderId || shipment.orderID || "—"}`, textX, detailsBodyY + 21);
+    doc.text(`Remarks: ${remarks}`, textX, detailsBodyY + 25, { maxWidth: textWidth });
+    doc.text(`Product: ${product}`, textX, detailsBodyY + 29, { maxWidth: textWidth });
+
+    const paymentX = left + consigneeWidth;
+    if (barcodeDataUrl) {
+      doc.addImage(barcodeDataUrl, "PNG", paymentX + 7, detailsBodyY + 3, paymentWidth - 14, 8);
+    } else {
+      drawBarcodeFallback(doc, paymentX + 7, detailsBodyY + 3, paymentWidth - 14, 8);
+    }
+    centeredText("Amount Payable", paymentX, detailsBodyY + 16, paymentWidth, 8);
+    centeredText(`Rs ${codAmount.toLocaleString()}/-`, paymentX, detailsBodyY + 22, paymentWidth, 10, true);
+    centeredText(codAmount > 0 ? "Cash on Delivery" : "Prepaid", paymentX, detailsBodyY + 28, paymentWidth, 8);
+
+    cell(left, shipperHeaderY, width, shipperHeaderHeight);
+    centeredText("Shipper Details / Return Address", left, shipperHeaderY + 5, width, 9);
+    cell(left, shipperBodyY, width, shipperHeight);
+    centeredText(shipment.sender || companyName, left, shipperBodyY + 4, width, 9, true);
+    centeredText(
+      `${shipment.senderAddress || shipment.returnAddress || "—"}  Mobile: ${shipment.senderPhone || "—"}`,
+      left,
+      shipperBodyY + 9,
+      width,
+      7.5
+    );
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. ELEGANT & EXACT LEOPARDS-STYLE AWB BILL (2 AWBs PER A4 PORTRAIT PAGE)
+// 1. AIR WAYBILL (ONE COPY PER PARCEL)
 // ─────────────────────────────────────────────────────────────────────────────
 function drawSingleAWBBlock(doc, startY, shipment, settings, qrDataUrl, barcodeDataUrl) {
   const companyName = (settings.companyName || "FLAX COURIER").toUpperCase();
@@ -323,38 +526,28 @@ function drawSingleAWBBlock(doc, startY, shipment, settings, qrDataUrl, barcodeD
   doc.text("UAN: 111 300 786", M + CW - 32, Y + 4);
 }
 
+async function createAWBDocument(shipments, settings, sheetLayout = false) {
+  const pageFormat = "a4";
+  const orientation = "portrait";
+  const labelsPerPage = sheetLayout ? 3 : 1;
+  const doc = new jsPDF({ orientation, unit: "mm", format: pageFormat });
+  for (const [index, shipment] of shipments.entries()) {
+    const positionOnPage = index % labelsPerPage;
+    if (index > 0 && positionOnPage === 0) {
+      doc.addPage(pageFormat, orientation);
+    }
+    const trackingId = shipment.id || shipment.trackingId || `shipment-${index + 1}`;
+    const barcodeDataUrl = getBarcodeDataURL(trackingId);
+    const top = 11 + positionOnPage * 99;
+    await drawMinimalAWB(doc, shipment, settings, barcodeDataUrl, top);
+  }
+  return doc;
+}
+
 export async function generateAWB(shipment = {}, settings = {}) {
   try {
-    const trackingId = shipment.id || "FLX93820428";
-    
-    // Generate real PNG Data URLs using JsBarcode and QRCode
-    const barcodeDataUrl = getBarcodeDataURL(trackingId);
-    let qrDataUrl = null;
-    try {
-      qrDataUrl = await getQRCodeDataURL(`https://flaxcouriers.com/track/${trackingId}`);
-    } catch (e) {
-      console.warn("QR creation warning:", e);
-    }
-
-    // A4 Portrait: 210mm x 297mm
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-
-    // Top Block (Copy #1: Customer Copy)
-    drawSingleAWBBlock(doc, 5, shipment, settings, qrDataUrl, barcodeDataUrl);
-
-    // Perforation / Cut Line
-    doc.setDrawColor(150);
-    doc.setLineDashPattern([2, 2], 0);
-    doc.line(6, 143, 204, 143);
-    doc.setFontSize(6.5);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(120);
-    doc.text("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - CUT HERE - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -", 14, 142.5);
-    doc.setLineDashPattern([], 0);
-
-    // Bottom Block (Copy #2: Operations Copy)
-    drawSingleAWBBlock(doc, 146, shipment, settings, qrDataUrl, barcodeDataUrl);
-
+    const trackingId = shipment.id || shipment.trackingId || "shipment";
+    const doc = await createAWBDocument([shipment], settings);
     doc.save(`AWB_${trackingId}.pdf`);
   } catch (err) {
     console.error("Critical generateAWB error:", err);
@@ -362,200 +555,165 @@ export async function generateAWB(shipment = {}, settings = {}) {
   }
 }
 
+export async function generateAWBs(shipments = [], settings = {}) {
+  if (shipments.length === 0) {
+    alert("Select at least one parcel to download AWBs.");
+    return;
+  }
+
+  try {
+    const doc = await createAWBDocument(shipments, settings, true);
+    doc.save(`AWBs_Selected_${new Date().toISOString().slice(0, 10)}.pdf`);
+  } catch (err) {
+    console.error("Critical generateAWBs error:", err);
+    alert("Could not generate AWBs: " + err.message);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. LOAD SHEET  (Booked Packets Summary Report — 3 Copies in ONE PDF)
+// 2. LOAD SHEET (PORTRAIT)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generateLoadSheet(shipments = [], settings = {}) {
   try {
-    const companyName = (settings.companyName || "FLAX COURIER").toUpperCase();
+    if (!shipments.length) {
+      alert("There are no parcels to include in this load sheet.");
+      return;
+    }
 
-    const now        = new Date();
-    const pickupDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}:${String(now.getSeconds()).padStart(2,"0")}`;
-    const printedOn  = `${String(now.getDate()).padStart(2,"0")}/${String(now.getMonth()+1).padStart(2,"0")}/${now.getFullYear()}`;
-    const challanNum = Math.floor(7000000 + Math.random() * 999999);
-    const accNum     = "575181";
+    const companyName = settings.companyName || "Flax Couriers";
+    const now = new Date();
+    const challanNumber = Math.floor(7000000 + Math.random() * 999999);
+    const amount = (shipment) => {
+      const raw = shipment.codAmount ?? shipment.cod ?? 0;
+      return Number(String(raw).replace(/[^\d.-]/g, "")) || 0;
+    };
+    const totalPieces = shipments.reduce((sum, shipment) => sum + (Number(shipment.pieces) || 1), 0);
+    const totalCOD = shipments.reduce((sum, shipment) => sum + amount(shipment), 0);
 
-    const COPIES = ["Customer Copy", "Operation Copy", "Courier Copy"];
-
-    const dataRows = shipments.length > 0 ? shipments : [
-      { id: "KI7539111862", city: "Faisalabad", cust: "MIAN ZEESHAN", pieces: 1, weight: 1.0, cod: "Rs 1410" },
-      { id: "KI7539112008", city: "Gujrat", cust: "HASSAN NASIR", pieces: 1, weight: 0.69, cod: "Rs 2000" },
-      { id: "KI7539112138", city: "Khairpur", cust: "FAISAL", pieces: 1, weight: 0.725, cod: "Rs 2300" }
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12;
+    const contentWidth = pageWidth - margin * 2;
+    const rowHeight = 8;
+    const columns = [
+      { title: "#", width: 7 },
+      { title: "Tracking ID", width: 29 },
+      { title: "Destination", width: 20 },
+      { title: "Shipper", width: 27 },
+      { title: "Consignee", width: 27 },
+      { title: "Order ID", width: 19 },
+      { title: "Pieces", width: 12 },
+      { title: "Weight (kg)", width: 20 },
+      { title: "COD (PKR)", width: 25 },
     ];
 
-    const totalPieces  = dataRows.reduce((a, s) => a + (parseInt(s.pieces) || 1), 0);
-    const totalPackets = dataRows.length;
-    const totalCOD     = dataRows.reduce((a, s) => a + (parseInt((s.cod || "0").replace(/[^\d]/g, "")) || 0), 0);
+    const truncate = (text, maxWidth) => {
+      let output = String(text || "-");
+      while (output.length > 1 && doc.getTextWidth(output) > maxWidth) {
+        output = `${output.slice(0, -2)}...`;
+      }
+      return output;
+    };
 
-    const COLS = [
-      { h: "Sr.",            w: 9  },
-      { h: "CN #",           w: 30 },
-      { h: "Destination",    w: 22 },
-      { h: "Shipper Name",   w: 28 },
-      { h: "No. of pieces",  w: 20 },
-      { h: "Consignee Name", w: 31 },
-      { h: "Order Id",       w: 16 },
-      { h: "Weight",         w: 14 },
-      { h: "COD Amount",     w: 16 },
-    ];
-    const totalRelW = COLS.reduce((a, c) => a + c.w, 0);
-
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const PW = 210;
-    const PH = 297;
-    const M  = 12;
-    const CW = PW - M * 2;
-
-    COLS.forEach(c => { c.w = (c.w / totalRelW) * CW; });
-
-    COPIES.forEach((copyLabel, pageIdx) => {
-      if (pageIdx > 0) doc.addPage();
-
-      let Y = M;
-
+    const drawPageHeader = async (pageNumber) => {
+      await addBrandLogo(doc, settings, companyName, margin, 10, 48, 18);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      const tW = doc.getTextWidth(copyLabel);
-      doc.text(copyLabel, PW / 2 - tW / 2, Y + 4);
-      Y += 8;
+      doc.setFontSize(18);
+      doc.setTextColor(10, 35, 66);
+      doc.text("LOAD SHEET", margin + 56, 18);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 110, 122);
+      doc.text(`Challan ${challanNumber}  |  ${now.toLocaleString()}`, pageWidth - margin, 16, { align: "right" });
+      doc.text(`Page ${pageNumber}`, pageWidth - margin, 22, { align: "right" });
 
-      doc.setDrawColor(0);
-      doc.setLineWidth(0.4);
-      doc.line(M, Y, PW - M, Y);
-      Y += 5;
-
-      // Logo Block
-      doc.setFillColor(10, 35, 66);
-      doc.rect(M, Y, 42, 20, "F");
-      doc.setTextColor(244, 196, 48);
+      doc.setFillColor(246, 248, 250);
+      const summaryY = 34;
+      doc.roundedRect(margin, summaryY, contentWidth, 14, 2, 2, "F");
+      doc.setTextColor(10, 35, 66);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(15);
-      doc.text("FLAX", M + 3, Y + 11);
-      doc.setTextColor(255, 255, 255);
       doc.setFontSize(9);
-      doc.text("COURIERS", M + 3, Y + 16.5);
+      doc.text(`Parcels  ${shipments.length}`, margin + 5, summaryY + 9);
+      doc.text(`Pieces  ${totalPieces}`, margin + 75, summaryY + 9);
+      doc.text(`Total COD  PKR ${totalCOD.toLocaleString()}`, pageWidth - margin - 5, summaryY + 9, { align: "right" });
 
-      const RI = M + 85;
-      doc.setTextColor(0, 0, 0);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text("Booked Packets Summary Report", RI, Y + 4);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-
-      const kv = (label, val, yOff) => {
-        doc.text(label, RI, Y + yOff);
-        doc.text(val,   RI + 30, Y + yOff);
-      };
-      kv("Pickup Date", pickupDate, 10);
-      kv("Printed On",  printedOn,  15);
-      kv("Challan#",    String(challanNum), 20);
-
-      Y += 24;
-
-      doc.setDrawColor(180);
-      doc.setLineWidth(0.3);
-      doc.line(M, Y, PW - M, Y);
-      Y += 5;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text("Client", M, Y + 4);
-
-      doc.text(`Acc # ${accNum}`, M + 35, Y + 4);
-      Y += 5;
-      doc.text("Company Name: ", M + 35, Y + 4);
-      doc.setFont("helvetica", "bold");
-      doc.text(companyName, M + 35 + doc.getTextWidth("Company Name: "), Y + 4);
-
-      Y += 9;
-
-      doc.setFont("helvetica", "normal");
-      doc.text("Handed Over To:", M, Y + 4);
-      doc.setFont("helvetica", "bold");
-      doc.text("Code: ABC", M + 35, Y + 4);
-      Y += 5;
-      doc.setFont("helvetica", "bold");
-      doc.text("Name: 123", M + 35, Y + 4);
-      Y += 9;
-
-      const ROW_H  = 6;
-      const HEAD_H = 7;
-
-      doc.setFillColor(255, 255, 255);
-      doc.rect(M, Y, CW, HEAD_H, "S");
-      doc.setTextColor(0, 0, 0);
+      const headerY = 56;
+      doc.setFillColor(240, 243, 247);
+      doc.roundedRect(margin, headerY - 5, contentWidth, 9, 1, 1, "F");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
-
-      let xPos = M;
-      COLS.forEach(col => {
-        doc.text(col.h, xPos + 1, Y + 5);
-        doc.line(xPos, Y, xPos, Y + HEAD_H);
-        xPos += col.w;
+      doc.setTextColor(70, 80, 92);
+      let x = margin;
+      columns.forEach((column) => {
+        doc.text(column.title, x + 1.5, headerY);
+        x += column.width;
       });
-      doc.line(xPos, Y, xPos, Y + HEAD_H);
-      Y += HEAD_H;
+      return headerY + 7;
+    };
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
+    let y = await drawPageHeader(1);
+    let pageNumber = 1;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
 
-      dataRows.forEach((s, idx) => {
-        const orderIdNum = String(idx + 166).padStart(4, "0");
-        const weightG    = ((parseFloat(s.weight) || 1) * 1000).toFixed(2);
-        const codAmt     = String(parseInt((s.cod || "0").replace(/[^\d]/g, "")) || 0);
+    for (let index = 0; index < shipments.length; index += 1) {
+      if (y + rowHeight > pageHeight - 47) {
+        doc.addPage();
+        pageNumber += 1;
+        y = await drawPageHeader(pageNumber);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+      }
 
-        const cells = [
-          String(idx + 1),
-          s.id || "",
-          s.city || "",
-          companyName,
-          String(s.pieces || 1),
-          s.cust || "",
-          orderIdNum,
-          weightG,
-          codAmt,
-        ];
-
-        doc.rect(M, Y, CW, ROW_H, "S");
-
-        xPos = M;
-        cells.forEach((cell, ci) => {
-          doc.text(String(cell), xPos + 1, Y + 4.5);
-          if (ci < COLS.length - 1) {
-            doc.line(xPos + COLS[ci].w, Y, xPos + COLS[ci].w, Y + ROW_H);
-          }
-          xPos += COLS[ci].w;
-        });
-
-        Y += ROW_H;
-      });
-
-      const summaries = [
-        `Total No. Of Pieces: ${totalPieces}`,
-        `Total No. Of Packets: ${totalPackets}`,
-        `Total COD Amount: ${totalCOD}`,
+      const shipment = shipments[index];
+      const values = [
+        String(index + 1),
+        shipment.id || shipment.trackingId,
+        shipment.city,
+        shipment.sender || companyName,
+        shipment.cust || shipment.recipient || shipment.receiverName,
+        shipment.orderId || shipment.orderID,
+        shipment.pieces || 1,
+        shipment.weight || 0,
+        amount(shipment).toLocaleString(),
       ];
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      summaries.forEach(text => {
-        doc.rect(M, Y, CW, ROW_H, "S");
-        doc.text(text, M + 1.5, Y + 4.5);
-        Y += ROW_H;
+      let x = margin;
+      doc.setDrawColor(226, 230, 235);
+      doc.line(margin, y + rowHeight - 1, pageWidth - margin, y + rowHeight - 1);
+      values.forEach((cell, columnIndex) => {
+        const column = columns[columnIndex];
+        doc.setTextColor(35, 45, 58);
+        doc.text(truncate(cell, column.width - 3), x + 1.5, y + 4.5);
+        x += column.width;
       });
+      y += rowHeight;
+    }
 
-      const SIG_Y = PH - 25;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text("Client Signature: _______________________", M, SIG_Y);
-      doc.text("Booking Staff Signature: _______________________", PW / 2 + 5, SIG_Y);
-    });
+    if (y + 22 > pageHeight - 8) {
+      doc.addPage();
+      pageNumber += 1;
+      y = await drawPageHeader(pageNumber);
+    }
+    y += 3;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(10, 35, 66);
+    doc.text(`Total parcels: ${shipments.length}`, margin, y);
+    doc.text(`Total pieces: ${totalPieces}`, margin + 75, y);
+    doc.text(`Total COD: PKR ${totalCOD.toLocaleString()}`, pageWidth - margin, y, { align: "right" });
 
-    doc.save(`Flax_LoadSheet_${new Date().toISOString().slice(0, 10)}.pdf`);
+    const signatureY = Math.min(pageHeight - 10, y + 18);
+    doc.setDrawColor(180, 188, 198);
+    doc.line(margin, signatureY, margin + 60, signatureY);
+    doc.line(pageWidth - margin - 60, signatureY, pageWidth - margin, signatureY);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(110, 120, 132);
+    doc.text("Prepared by", margin, signatureY + 4);
+    doc.text("Received by", pageWidth - margin - 60, signatureY + 4);
+
+    doc.save(`Flax_LoadSheet_${now.toISOString().slice(0, 10)}.pdf`);
   } catch (err) {
     console.error("Critical generateLoadSheet error:", err);
     alert("Could not generate Load Sheet: " + err.message);
@@ -565,65 +723,98 @@ export async function generateLoadSheet(shipments = [], settings = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. INVOICE PDF
 // ─────────────────────────────────────────────────────────────────────────────
-export function generateInvoicePDF(invoice, settings = {}) {
+export async function generateInvoicePDF(invoice, settings = {}) {
   const companyName = settings.companyName || "Flax Couriers";
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const left = 15;
+  const right = 195;
+  const isSettlement = Boolean(invoice.shipperId);
+  const cod = Number(invoice.totalCODAmount) || 0;
+  const charges = Number(invoice.deliveryCharges) || 0;
+  const net = Number(invoice.netPayable ?? invoice.totalCODAmount - invoice.deliveryCharges) || 0;
 
-  doc.setFillColor(10, 35, 66);
-  doc.rect(0, 0, 210, 40, "F");
-
-  doc.setTextColor(244, 196, 48);
+  await addBrandLogo(doc, settings, companyName, left, 12, 58, 20);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text(companyName.toUpperCase(), 15, 22);
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(10);
-  doc.text("OFFICIAL INVOICE", 15, 32);
-  doc.setFontSize(12);
-  doc.text(`INVOICE #: ${invoice.id}`, 140, 20);
-  doc.setFontSize(10);
-  doc.text(`Date: ${invoice.date || new Date().toLocaleDateString()}`, 140, 28);
-  doc.text(`Status: ${(invoice.status || "Pending").toUpperCase()}`, 140, 34);
-
+  doc.setFontSize(18);
   doc.setTextColor(10, 35, 66);
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Billed To:", 15, 55);
-  doc.setFontSize(10);
+  doc.text("INVOICE", right, 17, { align: "right" });
   doc.setFont("helvetica", "normal");
-  doc.text(`Customer Name: ${invoice.cust || "Valued Client"}`, 15, 63);
-
-  doc.setFillColor(240, 244, 248);
-  doc.rect(15, 85, 180, 10, "F");
-  doc.setFont("helvetica", "bold");
-  doc.text("Description", 20, 91.5);
-  doc.text("Qty", 120, 91.5);
-  doc.text("Amount", 160, 91.5);
-
-  doc.setFont("helvetica", "normal");
-  doc.text(`Courier Services — Invoice ${invoice.id}`, 20, 103);
-  doc.text("1", 120, 103);
-  doc.text(invoice.amount || "Rs 0", 160, 103);
+  doc.setFontSize(9);
+  doc.setTextColor(100, 110, 122);
+  doc.text(`No. ${invoice.id || "-"}`, right, 25, { align: "right" });
+  doc.text(`Date ${invoice.date || new Date().toLocaleDateString()}`, right, 31, { align: "right" });
+  doc.text(`Status ${(invoice.status || "Pending").toUpperCase()}`, right, 37, { align: "right" });
 
   doc.setDrawColor(220, 225, 230);
-  doc.line(15, 110, 195, 110);
+  doc.line(left, 45, right, 45);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(100, 110, 122);
+  doc.text("BILLED TO", left, 58);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("Total:", 110, 125);
-  doc.setTextColor(22, 163, 74);
-  doc.text(invoice.amount || "Rs 0", 165, 125);
+  doc.setFontSize(11);
+  doc.setTextColor(10, 35, 66);
+  doc.text(invoice.cust || "Valued Client", left, 66);
+  if (invoice.shipperAccount) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 110, 122);
+    doc.text(`Account #${invoice.shipperAccount}`, left, 73);
+  }
 
-  doc.setTextColor(140, 150, 160);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "italic");
-  doc.text("Thank you for shipping with Flax Couriers. Contact: ops@flaxcouriers.com", 15, 160);
+  doc.setFillColor(246, 248, 250);
+  doc.rect(left, 87, right - left, 9, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(80, 90, 102);
+  doc.text("DESCRIPTION", left + 3, 93);
+  doc.text("QTY", 135, 93, { align: "right" });
+  doc.text("AMOUNT (PKR)", right - 3, 93, { align: "right" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(35, 45, 58);
+  if (isSettlement) {
+    doc.text("Delivered parcels - COD collected", left + 3, 108);
+    doc.text(String(invoice.deliveredParcelCount || 0), 135, 108, { align: "right" });
+    doc.text(cod.toLocaleString(), right - 3, 108, { align: "right" });
+    doc.text("Delivery charges deduction", left + 3, 120);
+    doc.text("-", 135, 120, { align: "right" });
+    doc.text(`- ${charges.toLocaleString()}`, right - 3, 120, { align: "right" });
+  } else {
+    doc.text(`Courier services - ${invoice.id || "Invoice"}`, left + 3, 108);
+    doc.text("1", 135, 108, { align: "right" });
+    doc.text(invoice.amount || "Rs 0", right - 3, 108, { align: "right" });
+  }
+
+  doc.setDrawColor(220, 225, 230);
+  doc.line(left, 130, right, 130);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(10, 35, 66);
+  doc.text(isSettlement && net < 0 ? "Amount due from shipper" : "Net payable", left + 3, 143);
+  doc.setTextColor(isSettlement && net < 0 ? 185 : 10, isSettlement && net < 0 ? 28 : 35, isSettlement && net < 0 ? 28 : 66);
+  doc.text(
+    isSettlement ? `PKR ${Math.abs(net).toLocaleString()}` : (invoice.amount || "Rs 0"),
+    right - 3,
+    143,
+    { align: "right" }
+  );
+
+  doc.setDrawColor(220, 225, 230);
+  doc.line(left, 274, right, 274);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(110, 120, 132);
+  doc.text(companyName, left, 281);
+  doc.text("Thank you for shipping with us.", right, 281, { align: "right" });
 
   doc.save(`Invoice_${invoice.id}.pdf`);
 }
 
-export function generateShipmentInvoicePDF(invoiceRequest, settings = {}) {
+export async function generateShipmentInvoicePDF(invoiceRequest, settings = {}) {
   const { date, shipments = [], shipperName = "Shipper", shipperAccount = "" } = invoiceRequest;
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const companyName = settings.companyName || "Flax Couriers";
   const invoiceDate = new Date(`${date}T00:00:00`).toLocaleDateString();
   const invoiceNumber = `INV-${String(date).replace(/-/g, "")}-${shipperAccount || "SHIPPER"}`;
@@ -633,39 +824,46 @@ export function generateShipmentInvoicePDF(invoiceRequest, settings = {}) {
     return counts;
   }, {});
 
+  await addBrandLogo(doc, settings, companyName, 15, 10, 56, 20);
   doc.setTextColor(10, 35, 66);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(companyName.toUpperCase(), 15, 20);
-  doc.setFontSize(12);
-  doc.text("SHIPMENT INVOICE", 15, 30);
+  doc.setFontSize(16);
+  doc.text("PARCEL SUMMARY", 195, 17, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 110, 122);
+  doc.text(`Invoice ${invoiceNumber}`, 195, 24, { align: "right" });
+  doc.text(`Date ${invoiceDate}`, 195, 30, { align: "right" });
   doc.setDrawColor(220, 225, 230);
-  doc.line(15, 36, 195, 36);
+  doc.line(15, 38, 195, 38);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(`Invoice #: ${invoiceNumber}`, 15, 46);
-  doc.text(`Booking date: ${invoiceDate}`, 15, 53);
-  doc.text(`Shipper: ${shipperName}${shipperAccount ? ` (#${shipperAccount})` : ""}`, 15, 60);
-  doc.text(`Total parcels: ${shipments.length}`, 15, 67);
+  doc.setTextColor(100, 110, 122);
+  doc.text(`Shipper  ${shipperName}${shipperAccount ? `  |  Account #${shipperAccount}` : ""}`, 15, 50);
+  doc.text(`Parcels  ${shipments.length}`, 15, 58);
 
-  let y = 78;
+  let y = 71;
   doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(100, 110, 122);
   doc.text("STATUS SUMMARY", 15, y);
-  y += 7;
+  y += 6;
   doc.setFont("helvetica", "normal");
   Object.entries(statusCounts).forEach(([status, count], index) => {
-    const x = index % 2 === 0 ? 15 : 108;
-    const rowY = y + Math.floor(index / 2) * 7;
+    const x = 15 + (index % 4) * 45;
+    const rowY = y + Math.floor(index / 4) * 6;
+    doc.setTextColor(35, 45, 58);
     doc.text(`${status}: ${count}`, x, rowY);
   });
-  y += Math.ceil(Object.keys(statusCounts).length / 2) * 7 + 7;
+  y += Math.ceil(Object.keys(statusCounts).length / 4) * 6 + 8;
 
   const drawTableHeader = () => {
     doc.setFillColor(240, 244, 248);
     doc.rect(15, y - 5, 180, 9, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
+    doc.setTextColor(70, 80, 92);
     doc.text("Tracking ID", 17, y);
     doc.text("Consignee", 55, y);
     doc.text("City", 105, y);
@@ -697,13 +895,15 @@ export function generateShipmentInvoicePDF(invoiceRequest, settings = {}) {
   doc.save(`Invoice_${date}_${fileShipper}.pdf`);
 }
 
-export function generateDeliverySheetPDF(sheet = {}, settings = {}) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+export async function generateDeliverySheetPDF(sheet = {}, settings = {}) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const companyName = settings.companyName || "Flax Couriers";
   const parcels = sheet.parcels || [];
   const width = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const left = 12;
   const right = width - 12;
+  const contentWidth = right - left;
   const parseAmount = (value) => Number(String(value || 0).replace(/[^\d.-]/g, "")) || 0;
   const totalCOD = parcels.reduce((sum, parcel) => sum + (Number(parcel.codAmount) || parseAmount(parcel.cod)), 0);
   const deliveredCOD = parcels.reduce((sum, parcel) => {
@@ -714,71 +914,91 @@ export function generateDeliverySheetPDF(sheet = {}, settings = {}) {
   const balance = Number.isFinite(Number(sheet.balance))
     ? Number(sheet.balance)
     : deliveredCOD - Number(sheet.totalReceivedAmount || 0) - Number(sheet.totalFuelCharges || 0);
-
-  doc.setFillColor(10, 35, 66);
-  doc.rect(0, 0, width, 30, "F");
-  doc.setTextColor(244, 196, 48);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text(companyName.toUpperCase(), left, 13);
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(11);
-  doc.text(`DELIVERY SHEET · ${sheet.id || "UNSAVED"}`, left, 22);
-  doc.setTextColor(10, 35, 66);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.text(`Rider: ${sheet.riderName || "—"}  |  Phone: ${sheet.riderPhone || "—"}`, left, 39);
-  doc.text(`Branch: ${sheet.branch || "—"}  |  Origin: ${sheet.origin || "—"}  |  Area: ${sheet.area || "—"}`, left, 46);
-  doc.text(`Date: ${sheet.date || "—"}  ${sheet.time || ""}  |  Sheet status: ${sheet.status || "Open"}`, left, 53);
-  doc.text(`Parcels: ${parcels.length}  |  Total COD: Rs ${totalCOD.toLocaleString()}  |  Fuel: Rs ${Number(sheet.totalFuelCharges || 0).toLocaleString()}  |  Received: Rs ${Number(sheet.totalReceivedAmount || 0).toLocaleString()}`, left, 60);
-  doc.text(`Balance: Rs ${balance.toLocaleString()}`, left, 66);
-
   const columns = [
-    { title: "CN #", x: 13, width: 31 },
-    { title: "Consignee", x: 45, width: 39 },
-    { title: "Phone / City", x: 85, width: 35 },
-    { title: "Status", x: 121, width: 41 },
-    { title: "Payment", x: 163, width: 22 },
-    { title: "COD", x: 186, width: 19 },
-    { title: "Received", x: 206, width: 22 },
-    { title: "Reason", x: 229, width: 55 },
+    { title: "CN #", x: left + 1 },
+    { title: "Consignee", x: left + 31 },
+    { title: "Status", x: left + 79 },
+    { title: "COD", x: left + 124 },
+    { title: "Received", x: left + 155 },
   ];
-  let y = 77;
-  const drawHeader = () => {
-    doc.setFillColor(240, 244, 248);
-    doc.rect(left, y - 5, right - left, 9, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
-    columns.forEach((column) => doc.text(column.title, column.x, y));
-    doc.setFont("helvetica", "normal");
-    y += 9;
-  };
-  drawHeader();
-
-  parcels.forEach((parcel) => {
-    if (y > 190) {
-      doc.addPage();
-      y = 20;
-      drawHeader();
+  const rowHeight = 17;
+  const truncate = (text, maxWidth) => {
+    let output = String(text || "—");
+    while (output.length > 1 && doc.getTextWidth(output) > maxWidth) {
+      output = `${output.slice(0, -2)}...`;
     }
+    return output;
+  };
+  let pageNumber = 1;
+  const drawPageHeader = async () => {
+    doc.setFillColor(10, 35, 66);
+    doc.rect(0, 0, width, 31, "F");
+    await addBrandLogo(doc, settings, companyName, left, 2, 40, 27);
+    doc.setTextColor(244, 196, 48);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(companyName.toUpperCase(), left + 48, 12, { maxWidth: width - left - 60 });
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10);
+    doc.text(`DELIVERY SHEET · ${sheet.id || "UNSAVED"}`, left + 48, 22);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(`Page ${pageNumber}`, right, 27, { align: "right" });
+
+    doc.setTextColor(10, 35, 66);
+    doc.setFontSize(8);
+    doc.text(`Rider: ${sheet.riderName || "—"}  |  Phone: ${sheet.riderPhone || "—"}`, left, 40);
+    doc.text(`Branch: ${sheet.branch || "—"}  |  Origin: ${sheet.origin || "—"}  |  Area: ${sheet.area || "—"}`, left, 47);
+    doc.text(`Date: ${sheet.date || "—"} ${sheet.time || ""}  |  Sheet status: ${sheet.status || "Open"}`, left, 54);
+    doc.setFontSize(7.5);
+    doc.text(`Parcels: ${parcels.length}  |  Total COD: Rs ${totalCOD.toLocaleString()}  |  Balance: Rs ${balance.toLocaleString()}`, left, 62);
+    doc.text(`Fuel: Rs ${Number(sheet.totalFuelCharges || 0).toLocaleString()}  |  Received: Rs ${Number(sheet.totalReceivedAmount || 0).toLocaleString()}`, left, 68);
+
+    doc.setFillColor(240, 244, 248);
+    doc.rect(left, 74, contentWidth, 9, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    columns.forEach((column) => doc.text(column.title, column.x, 80));
+    doc.setFont("helvetica", "normal");
+    return 86;
+  };
+
+  let y = await drawPageHeader();
+  for (const [index, parcel] of parcels.entries()) {
+    if (y + rowHeight > pageHeight - 12) {
+      doc.addPage();
+      pageNumber += 1;
+      y = await drawPageHeader();
+    }
+    if (index % 2 === 1) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(left, y - 2, contentWidth, rowHeight, "F");
+    }
+
     const values = [
       parcel.trackingId || parcel.shipmentId || "—",
       parcel.cust || "Consignee",
-      [parcel.receiverPhone, parcel.city].filter(Boolean).join(" / ") || "—",
       parcel.status || "Out for Delivery",
-      parcel.paymentStatus || "Unpaid",
       `Rs ${Number(parcel.codAmount || parseAmount(parcel.cod)).toLocaleString()}`,
       `Rs ${Number(parcel.receivedAmount || 0).toLocaleString()}`,
-      parcel.reason || "—",
     ];
-    doc.setFontSize(7);
-    values.forEach((value, index) => {
-      doc.text(String(value).slice(0, index === 7 ? 35 : 26), columns[index].x, y);
+    const maxWidths = [28, 46, 43, 29, 29];
+    doc.setFontSize(7.5);
+    values.forEach((value, valueIndex) => {
+      doc.text(truncate(value, maxWidths[valueIndex]), columns[valueIndex].x, y + 3);
     });
+    const details = [
+      parcel.receiverPhone && `Phone: ${parcel.receiverPhone}`,
+      parcel.city && `City: ${parcel.city}`,
+      `Payment: ${parcel.paymentStatus || "Unpaid"}`,
+      parcel.reason && `Reason: ${parcel.reason}`,
+    ].filter(Boolean).join("  |  ") || "—";
+    doc.setFontSize(6.5);
+    doc.text(doc.splitTextToSize(details, contentWidth - 3), left + 1, y + 8);
     doc.setDrawColor(230, 234, 239);
-    doc.line(left, y + 3, right, y + 3);
-    y += 8;
-  });
+    doc.line(left, y + rowHeight - 1, right, y + rowHeight - 1);
+    y += rowHeight;
+  }
 
   const safeId = String(sheet.id || "Delivery_Sheet").replace(/[^\w-]/g, "_");
   doc.save(`${safeId}.pdf`);
@@ -787,20 +1007,20 @@ export function generateDeliverySheetPDF(sheet = {}, settings = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. COD STATEMENT PDF
 // ─────────────────────────────────────────────────────────────────────────────
-export function generateCODStatement(codRows = [], stats = {}, settings = {}) {
+export async function generateCODStatement(codRows = [], stats = {}, settings = {}) {
   const companyName = settings.companyName || "Flax Couriers";
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
   doc.setFillColor(10, 35, 66);
   doc.rect(0, 0, 210, 35, "F");
-  doc.setTextColor(244, 196, 48);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(companyName.toUpperCase(), 15, 18);
+  await addBrandLogo(doc, settings, companyName, 15, 4, 42, 27);
   doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("CASH ON DELIVERY SETTLEMENT STATEMENT", 15, 27);
-  doc.text(`Date: ${new Date().toLocaleDateString()}`, 150, 20);
+  doc.text("CASH ON DELIVERY SETTLEMENT STATEMENT", 64, 21);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(`Date: ${new Date().toLocaleDateString()}`, 195, 21, { align: "right" });
 
   doc.setTextColor(10, 35, 66);
   doc.setFontSize(10);
@@ -836,9 +1056,9 @@ export function generateCODStatement(codRows = [], stats = {}, settings = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. GENERIC REPORT PDF
 // ─────────────────────────────────────────────────────────────────────────────
-export function generateReportPDF(reportType, shipments = [], settings = {}) {
+export async function generateReportPDF(reportType, shipments = [], settings = {}) {
   const companyName = (settings.companyName || "FLAX COURIERS").toUpperCase();
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const PW = 210;
   const PH = 297;
   const M = 12;
@@ -875,17 +1095,7 @@ export function generateReportPDF(reportType, shipments = [], settings = {}) {
   doc.setFillColor(10, 35, 66);
   doc.rect(M, Y, CW, 28, "F");
 
-  // Logo text
-  doc.setTextColor(244, 196, 48); // Yellow accent
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("FLAX", M + 5, Y + 12);
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(10);
-  doc.text("COURIERS", M + 5, Y + 18);
-  doc.setFontSize(6);
-  doc.setFont("helvetica", "normal");
-  doc.text("Official Logistics Report", M + 5, Y + 22);
+  await addBrandLogo(doc, settings, companyName, M + 4, Y + 3, 38, 22);
 
   // Report Title
   doc.setFont("helvetica", "bold");

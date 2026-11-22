@@ -8,6 +8,7 @@ import { StatusPill } from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
 import { inputCls, SHIPMENT_STATUS_OPTIONS } from "../lib/constants";
 import { generateInvoicePDF, generateShipmentInvoicePDF } from "../lib/pdfGenerator";
+import AdminInvoices from "./AdminInvoices";
 
 function getLocalDateKey(date) {
   const year = date.getFullYear();
@@ -43,7 +44,7 @@ function getShipperKey(shipper) {
   return String(shipper._docId || shipper.accNum || shipper.email || shipper.name || "");
 }
 
-export default function Invoices() {
+function ClientInvoices() {
   const {
     invoices,
     generateInvoice,
@@ -111,6 +112,7 @@ export default function Invoices() {
       alert("Please select a shipper.");
       return;
     }
+
     if (!amount) {
       alert("Please enter invoice amount.");
       return;
@@ -355,4 +357,9 @@ export default function Invoices() {
       )}
     </div>
   );
+}
+
+export default function Invoices() {
+  const { userRole } = useContext(AppContext);
+  return userRole === "admin" ? <AdminInvoices /> : <ClientInvoices />;
 }

@@ -30,13 +30,17 @@ import ApiIntegration from "./pages/ApiIntegration";
 import SupportTickets from "./pages/SupportTickets";
 import SettingsPage from "./pages/SettingsPage";
 import ProfilePage from "./pages/ProfilePage";
-import { PAGE_TITLES } from "./lib/constants";
+import AreaPage from "./pages/AreaPage";
+import ReasonsPage from "./pages/ReasonsPage";
+import { BRAND_LOGO_URL, PAGE_TITLES } from "./lib/constants";
 
 const PAGE_PATHS = {
   dashboard: "/dashboard",
   shipments: "/shipments",
   create: "/shipments/create",
   bulk: "/shipments/bulk",
+  area: "/area",
+  reasons: "/reasons",
   "pickup-sheet": "/pickup-sheet",
   "third-party-riders": "/third-party-riders",
   "delivery-sheets": "/delivery-sheets",
@@ -52,16 +56,12 @@ const PAGE_PATHS = {
   profile: "/profile",
 };
 
-function LoadingScreen() {
+function LoadingScreen({ logoUrl }) {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: "#0A2342" }}>
       <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "#F4C430" }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="#0A2342">
-            <path d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8z" />
-            <circle cx="5.5" cy="18.5" r="2.5" />
-            <circle cx="18.5" cy="18.5" r="2.5" />
-          </svg>
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-white p-1.5">
+          <img src={logoUrl} alt="Flax Couriers" className="h-full w-full object-contain" />
         </div>
         <div className="w-6 h-6 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
         <p className="text-white/50 text-xs mt-2">Connecting to Flax Couriers...</p>
@@ -80,7 +80,7 @@ function PortalLayout() {
   const currentPath = location.pathname.replace(/\/+$/, "") || "/";
   const page = Object.keys(PAGE_PATHS).find(
     (pageId) => PAGE_PATHS[pageId] === currentPath
-  ) || (currentPath.startsWith("/delivery-sheets/") ? "delivery-sheets" : "dashboard");
+  ) || (currentPath.startsWith("/delivery-sheets/") ? "delivery-sheets" : currentPath.startsWith("/invoices/") ? "invoices" : "dashboard");
 
   const go = useCallback((pageId) => {
     navigate(PAGE_PATHS[pageId] || PAGE_PATHS.dashboard);
@@ -142,7 +142,7 @@ function PortalLayout() {
 }
 
 export default function App() {
-  const { userRole } = useContext(AppContext) || {};
+  const { userRole, settings } = useContext(AppContext) || {};
   const [authed, setAuthed] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const navigate = useNavigate();
@@ -158,7 +158,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  if (!authChecked) return <LoadingScreen />;
+  if (!authChecked) return <LoadingScreen logoUrl={settings?.logoUrl || BRAND_LOGO_URL} />;
 
   return (
     <Routes>
@@ -177,6 +177,8 @@ export default function App() {
             element={userRole === "client" ? <BulkBooking go={go} /> : <Navigate to="/shipments" replace />}
           />
           <Route path="track" element={<TrackShipment go={go} />} />
+          <Route path="area" element={<AreaPage go={go} />} />
+          <Route path="reasons" element={<ReasonsPage go={go} />} />
           <Route path="pickups" element={<PickupsPage go={go} />} />
           <Route
             path="pickup-sheet"
@@ -201,8 +203,15 @@ export default function App() {
           <Route path="customers" element={<CustomersPage go={go} />} />
           <Route path="cod" element={<CODPage go={go} />} />
           <Route path="invoices" element={<Invoices go={go} />} />
+          <Route
+            path="invoices/:shipperId"
+            element={userRole === "admin" ? <Invoices go={go} /> : <Navigate to="/invoices" replace />}
+          />
           <Route path="reports" element={<Reports go={go} />} />
-          <Route path="integrations/api" element={<ApiIntegration go={go} />} />
+          <Route
+            path="integrations/api"
+            element={userRole === "admin" ? <ApiIntegration go={go} /> : <Navigate to="/shipments" replace />}
+          />
           <Route path="support" element={<SupportTickets go={go} />} />
           <Route path="settings" element={<SettingsPage go={go} />} />
           <Route path="profile" element={<ProfilePage go={go} />} />

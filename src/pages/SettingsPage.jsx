@@ -1,12 +1,12 @@
 import React, { useState, useContext, useEffect } from "react";
-import { Truck, ShieldCheck, Check, DollarSign, MapPin } from "lucide-react";
+import { ShieldCheck, Check, DollarSign, MapPin } from "lucide-react";
 import { updatePassword } from "firebase/auth";
 import { auth } from "../firebase/firebase";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Field from "../components/ui/Field";
 import { AppContext } from "../context/AppContext";
-import { inputCls } from "../lib/constants";
+import { BRAND_LOGO_URL, inputCls } from "../lib/constants";
 
 export default function SettingsPage() {
   const { settings, updateSettings } = useContext(AppContext);
@@ -102,9 +102,6 @@ export default function SettingsPage() {
     setSuccess(true);
     setTimeout(() => setSuccess(false), 2500);
   };
-
-  const NAVY = settings.primaryColor || "#0A2342";
-  const YELLOW = settings.accentColor || "#F4C430";
 
   return (
     <div className="p-5 lg:p-8 space-y-5">
@@ -271,10 +268,13 @@ export default function SettingsPage() {
             <form onSubmit={handleSaveBranding} className="space-y-5 animate-fadeUp">
               <div className="flex items-center gap-4">
                 <div
-                  className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300"
-                  style={{ background: `linear-gradient(135deg, ${YELLOW}, ${YELLOW})` }}
+                  className="w-20 h-16 rounded-xl border border-slate-200 bg-white p-2 flex items-center justify-center"
                 >
-                  <Truck color={NAVY} size={26} />
+                  <img
+                    src={settings.logoUrl || BRAND_LOGO_URL}
+                    alt={`${companyName} logo`}
+                    className="max-h-full max-w-full object-contain"
+                  />
                 </div>
                 <div>
                   <Button variant="outline" type="button" onClick={() => {
@@ -293,9 +293,9 @@ export default function SettingsPage() {
                     };
                     input.click();
                   }}>
-                    Upload Logo
+                    {settings.logoUrl ? "Change Logo" : "Upload Logo"}
                   </Button>
-                  <p className="text-[11px] text-slate-400 mt-1.5">PNG or SVG, min 256×256</p>
+                  <p className="text-[11px] text-slate-400 mt-1.5">PNG or SVG. This logo appears on invoices, AWBs and load sheets.</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

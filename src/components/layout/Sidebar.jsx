@@ -4,10 +4,11 @@ import { auth } from "../../firebase/firebase";
 import {
   LayoutDashboard, Package, PackagePlus, PackageSearch, ClipboardList, Truck, Users, Wallet,
   FileText, BarChart3, Plug, LifeBuoy, Settings, User, LogOut, X, Boxes,
-  ShieldCheck, ShoppingBag,
+  ShieldCheck, ShoppingBag, Globe,
 } from "lucide-react";
 import { AppContext } from "../../context/AppContext";
-import { ADMIN_NAV_SECTIONS, CLIENT_NAV_SECTIONS } from "../../lib/constants";
+import { useLanguage } from "../../context/LanguageContext";
+import { ADMIN_NAV_SECTIONS, BRAND_LOGO_URL, CLIENT_NAV_SECTIONS } from "../../lib/constants";
 
 const ICONS = {
   LayoutDashboard, Package, PackagePlus, PackageSearch, ClipboardList, Truck, Users, Wallet,
@@ -16,8 +17,10 @@ const ICONS = {
 
 export default function Sidebar({ page, setPage, open, setOpen }) {
   const { settings, userRole, setUserRole } = useContext(AppContext);
+  const { language, toggleLanguage, t } = useLanguage();
   const NAVY   = settings.primaryColor || "#0A2342";
   const YELLOW = settings.accentColor  || "#F4C430";
+  const logoUrl = settings.logoUrl || BRAND_LOGO_URL;
 
   const words       = (settings.companyName || "Flax Couriers").split(" ");
   const firstWord   = words[0] || "FLAX";
@@ -44,10 +47,9 @@ export default function Sidebar({ page, setPage, open, setOpen }) {
         {/* Brand + Close */}
         <div className="flex items-center gap-3 px-5 pt-6 pb-4">
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-md"
-            style={{ background: `linear-gradient(135deg, ${YELLOW}, ${YELLOW})`, color: NAVY }}
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white p-1.5 shadow-md"
           >
-            <Truck size={20} strokeWidth={2.5} />
+            <img src={logoUrl} alt="Flax Couriers" className="h-full w-full object-contain" />
           </div>
           <div>
             <div className="font-display font-bold text-[15px] leading-none tracking-wide uppercase">{firstWord}</div>
@@ -72,10 +74,10 @@ export default function Sidebar({ page, setPage, open, setOpen }) {
               }
               <div>
                 <span className="block text-[11px] font-bold text-white uppercase tracking-wider">
-                  {userRole === "admin" ? "Ops Admin Portal" : "Shipper / Merchant"}
+                  {userRole === "admin" ? t("Ops Admin Portal") : t("Shipper / Merchant")}
                 </span>
                 <span className="block text-[9px] text-white/40">
-                  {userRole === "admin" ? "Full courier ops access" : "Parcel booking & tracking"}
+                  {userRole === "admin" ? t("Full courier ops access") : t("Parcel booking & tracking")}
                 </span>
               </div>
             </div>
@@ -87,7 +89,7 @@ export default function Sidebar({ page, setPage, open, setOpen }) {
           {navSections.map((sec) => (
             <div key={sec.section}>
               <div className="px-3 mb-1 text-[10px] font-bold tracking-[0.14em] text-white/35 uppercase">
-                {sec.section}
+                {t(sec.section)}
               </div>
               {sec.items.map((item) => {
                 const active = page === item.id;
@@ -103,7 +105,7 @@ export default function Sidebar({ page, setPage, open, setOpen }) {
                   >
                     {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full" style={{ background: YELLOW }} />}
                     <Icon size={16} strokeWidth={2} className={active ? "" : "opacity-80"} style={active ? { color: YELLOW } : {}} />
-                    {item.label}
+                    {t(item.label)}
                   </button>
                 );
               })}
@@ -111,13 +113,25 @@ export default function Sidebar({ page, setPage, open, setOpen }) {
           ))}
         </nav>
 
-        {/* Logout */}
-        <div className="p-3 border-t border-white/10">
+        {/* Language Switch & Logout Footer */}
+        <div className="p-3 border-t border-white/10 space-y-1">
+          <button
+            onClick={toggleLanguage}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12px] font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all"
+          >
+            <span className="flex items-center gap-2">
+              <Globe size={15} className="text-amber-400" />
+              <span>{t("Language")}: <strong className="text-white">{language === "ur" ? "Roman Urdu" : "English"}</strong></span>
+            </span>
+            <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full text-white/80">
+              {language === "ur" ? "EN mein badlein" : "Roman Urdu"}
+            </span>
+          </button>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium text-white/60 hover:text-red-400 hover:bg-red-500/10 transition-all"
           >
-            <LogOut size={16} /> Logout
+            <LogOut size={16} /> {t("Logout")}
           </button>
         </div>
       </aside>
