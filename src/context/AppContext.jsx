@@ -50,10 +50,35 @@ const DELIVERY_ATTEMPT_RESULT_STATUSES = new Set([
   "Partial Delivery",
 ]);
 
-const markTimelineStatus = (timeline, status, date) => {
-  const events = Array.isArray(timeline) ? [...timeline] : [];
-  const index = events.findIndex((event) => event.t === status);
-  const event = { t: status, d: date, done: true };
+// Attempt/failure outcomes can recur (Re-attempt → fail → Re-attempt → fail),
+// and parcels can be re-dispatched, so each occurrence must be appended as its
+// own timestamped timeline entry instead of overwriting the previous one.
+const REPEATABLE_DELIVERY_TIMELINE_STATUSES = new Set([
+  ...FAILED_DELIVERY_STATUSES,
+  "Out for Delivery",
+  "Delivery in Progress",
+  "Delivered",
+]);
+
+const applyStatusToTimeline = (timeline, status, date, note = "", ts = null) => {
+  const tsFields = ts ? { ts } : {};
+  // Only stamp events that are still pending — never falsify the timestamp of
+  // an event that already happened.
+  const stampIfPending = (event) => (event.done ? event : { ...event, d: date, done: true, ...tsFields });
+  const events = (Array.isArray(timeline) ? timeline : []).map((event) => {
+    if (status === "In Transit" && event.t === "Picked Up") return stampIfPending(event);
+    if (status === "Out for Delivery" && event.t !== status && ["Picked Up", "Received at Origin Hub", "Dispatched", "Out for Delivery"].includes(event.t)) return stampIfPending(event);
+    if (status === "Delivered" && event.t !== "Returned" && event.t !== status) return stampIfPending(event);
+    return event;
+  });
+  const event = { t: status, d: date, done: true, ...(note ? { note } : {}), ...tsFields };
+  if (REPEATABLE_DELIVERY_TIMELINE_STATUSES.has(status)) {
+    const last = events[events.length - 1];
+    if (last && last.t === status && last.done) return events;
+    events.push(event);
+    return events;
+  }
+  const index = events.findIndex((item) => item.t === status);
   if (index >= 0) events[index] = { ...events[index], ...event };
   else events.push(event);
   return events;
@@ -421,6 +446,7 @@ export function AppProvider({ children }) {
         pieces: parseInt(s.pieces) || 1,
         parcelType: s.parcelType || "Parcel",
         serviceType: s.serviceType || "Standard",
+        externalRef: s.externalRef || s.shopifyId || "",
         instructions: s.instructions || "",
         codStatus: "Pending",
         timeline: [
@@ -454,20 +480,7 @@ export function AppProvider({ children }) {
     }
 
     const nowStr = `${getFormattedDate()}, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-    const updatedTimeline = (shipment.timeline || []).map((event) => {
-      if (newStatus === "In Transit" && event.t === "Picked Up") return { ...event, d: nowStr, done: true };
-      if (newStatus === "Out for Delivery" && ["Picked Up", "Received at Origin Hub", "Dispatched", "Out for Delivery"].includes(event.t)) return { ...event, d: nowStr, done: true };
-      if (newStatus === "Delivered" && event.t !== "Returned") return { ...event, d: nowStr, done: true };
-      return event;
-    });
-
-    const timelineCopy = [...updatedTimeline];
-    const matchingEventIndex = timelineCopy.findIndex((event) => event.t === newStatus);
-    if (matchingEventIndex >= 0) {
-      timelineCopy[matchingEventIndex] = { ...timelineCopy[matchingEventIndex], d: nowStr, done: true };
-    } else {
-      timelineCopy.push({ t: newStatus, d: nowStr, done: true });
-    }
+    const timelineCopy = applyStatusToTimeline(shipment.timeline, newStatus, nowStr, "", Date.now());
 
     await updateDoc(doc(db, "shipments", shipment._docId), {
       status: newStatus,
@@ -687,7 +700,7 @@ export function AppProvider({ children }) {
         ),
         deliverySheetId: sheetId,
         deliveryAttempt: Number(parcel.deliveryAttempt) || 0,
-        timeline: markTimelineStatus(shipment.timeline, parcel.status, dateTime),
+        timeline: applyStatusToTimeline(shipment.timeline, parcel.status, dateTime, parcel.reason, now),
       });
     });
     await batch.commit();
@@ -733,7 +746,10 @@ export function AppProvider({ children }) {
       }
       const nextProgress = getShipmentStatusProgress(parcel.status);
       const currentProgress = getShipmentProgress(shipment);
-      if (nextProgress !== null && nextProgress < currentProgress) {
+      const bothDeliveryOutcomes =
+        DELIVERY_SHEET_OUTCOME_STATUSES.includes(parcel.status) &&
+        DELIVERY_SHEET_OUTCOME_STATUSES.includes(shipment.status);
+      if (nextProgress !== null && nextProgress < currentProgress && !bothDeliveryOutcomes) {
         throw new Error(`Parcel ${parcel.shipmentId} cannot be moved back to an earlier status.`);
       }
       const deliveryAttempt = Math.max(Number(parcel.deliveryAttempt) || 0, Number(shipment.deliveryAttempt) || 0) +
@@ -745,6 +761,7 @@ export function AppProvider({ children }) {
         nextProgress,
         currentProgress,
         deliveryAttempt,
+        statusChanged: parcel.status !== shipment.status,
       };
     });
 
@@ -774,17 +791,77 @@ export function AppProvider({ children }) {
 
     const batch = writeBatch(db);
     batch.update(doc(db, "deliverySheets", sheetDocId), updatedSheet);
-    shipmentUpdates.forEach(({ parcel, shipment, nextProgress, currentProgress, deliveryAttempt }) => {
+    shipmentUpdates.forEach(({ parcel, shipment, nextProgress, currentProgress, deliveryAttempt, statusChanged }) => {
       batch.update(doc(db, "shipments", shipment._docId), {
         status: parcel.status,
         statusProgress: Math.max(currentProgress, nextProgress ?? currentProgress),
         deliverySheetId: nextStatus === "Open" || parcel.status === "Delivered" ? sheet.id : null,
         deliveryAttempt,
-        timeline: markTimelineStatus(shipment.timeline, parcel.status, dateTime),
+        ...(statusChanged
+          ? { timeline: applyStatusToTimeline(shipment.timeline, parcel.status, dateTime, parcel.reason, now) }
+          : {}),
       });
     });
     await batch.commit();
     await addNotification(`Delivery sheet ${sheet.id} ${nextStatus === "Close" ? "closed" : "saved"}.`);
+  };
+
+  // Immediately persist a single parcel's delivery outcome so shipment
+  // tracking updates the moment the status changes (no need to save the sheet).
+  const updateSheetParcelStatus = async (sheetDocId, shipmentId, status) => {
+    if (userRole !== "admin") throw new Error("Only an admin can update delivery sheets.");
+    const sheet = deliverySheets.find((item) => item._docId === sheetDocId);
+    if (!sheet) throw new Error("Delivery sheet could not be found.");
+    if (sheet.status === "Close") throw new Error("Closed delivery sheets are read-only.");
+    if (!DELIVERY_SHEET_OUTCOME_STATUSES.includes(status)) {
+      throw new Error(`Status ${status} is not valid for delivery sheet parcels.`);
+    }
+    const parcel = (sheet.parcels || []).find((item) => item.shipmentId === shipmentId);
+    if (!parcel) throw new Error(`Parcel ${shipmentId} is not on this delivery sheet.`);
+
+    const shipment = shipments.find((item) => item.id === shipmentId);
+    if (!shipment || !shipment._docId) throw new Error(`Parcel ${shipmentId} could not be found.`);
+    const timelineHasStatus = (shipment.timeline || []).some(
+      (event) => event.t === status && event.done
+    );
+    if (parcel.status === status && shipment.status === status && timelineHasStatus) return;
+
+    const nextProgress = getShipmentStatusProgress(status);
+    const currentProgress = getShipmentProgress(shipment);
+    const bothDeliveryOutcomes =
+      DELIVERY_SHEET_OUTCOME_STATUSES.includes(parcel.status) &&
+      DELIVERY_SHEET_OUTCOME_STATUSES.includes(shipment.status);
+    if (nextProgress !== null && nextProgress < currentProgress && !bothDeliveryOutcomes) {
+      throw new Error(`Parcel ${shipmentId} cannot be moved back to an earlier status.`);
+    }
+
+    const now = Date.now();
+    const dateTime = new Date(now).toLocaleString();
+    const deliveryAttempt = Math.max(Number(parcel.deliveryAttempt) || 0, Number(shipment.deliveryAttempt) || 0) +
+      (["Out for Delivery", "Delivery in Progress"].includes(shipment.status) &&
+        DELIVERY_ATTEMPT_RESULT_STATUSES.has(status) ? 1 : 0);
+    const updatedParcels = (sheet.parcels || []).map((item) =>
+      item.shipmentId === shipmentId ? { ...item, status, deliveryAttempt } : item
+    );
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, "deliverySheets", sheetDocId), {
+      parcels: updatedParcels,
+      updatedAt: now,
+      history: [
+        ...(sheet.history || []),
+        { action: `Parcel ${shipmentId} marked ${status}`, dateTime, status },
+      ],
+    });
+    batch.update(doc(db, "shipments", shipment._docId), {
+      status,
+      statusProgress: Math.max(currentProgress, nextProgress ?? currentProgress),
+      deliverySheetId: sheet.id,
+      deliveryAttempt,
+      timeline: applyStatusToTimeline(shipment.timeline, status, dateTime, parcel.reason, now),
+    });
+    await batch.commit();
+    await addNotification(`Parcel ${shipmentId} marked ${status}.`);
   };
 
   const releaseCOD = async (id) => {
@@ -1110,6 +1187,7 @@ export function AppProvider({ children }) {
         updateThirdPartyRider,
         createDeliverySheet,
         updateDeliverySheet,
+        updateSheetParcelStatus,
         releaseCOD,
         addPickup,
         updatePickupStatus,

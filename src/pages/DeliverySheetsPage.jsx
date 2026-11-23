@@ -2,6 +2,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  Barcode,
   Camera,
   ChevronDown,
   Eye,
@@ -23,7 +24,8 @@ import {
   DELIVERY_SHEET_OUTCOME_STATUSES,
   inputCls,
 } from "../lib/constants";
-import { generateDeliverySheetPDF } from "../lib/pdfGenerator";
+import { generateDeliverySheetPDF, generateBarcodeSheet } from "../lib/pdfGenerator";
+import { DEFAULT_KARACHI_AREAS } from "./AreaPage";
 
 const EMPTY_FORM = () => ({
   riderId: "",
@@ -124,6 +126,7 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     areas: dbAreas = [],
     createDeliverySheet,
     updateDeliverySheet,
+    updateSheetParcelStatus,
     settings,
   } = useContext(AppContext);
   const logoUrl = settings.logoUrl || BRAND_LOGO_URL;
@@ -144,7 +147,7 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
   const [riderDropdownOpen, setRiderDropdownOpen] = useState(false);
   const [areaSearch, setAreaSearch] = useState('');
   const [areaDropdownOpen, setAreaDropdownOpen] = useState(false);
-  const [customArea, setCustomArea] = useState("");
+
   const [scannerOpen, setScannerOpen] = useState(false);
   const [printAfterSave, setPrintAfterSave] = useState("Yes");
   const [formError, setFormError] = useState("");
@@ -193,6 +196,7 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     return [];
   })();
   const areaOptions = [...new Set([
+    ...DEFAULT_KARACHI_AREAS.map((a) => a.name),
     ...localStorageAreas,
     ...(Array.isArray(dbAreas) ? dbAreas.map((a) => a.name).filter(Boolean) : []),
     ...shipments.map((shipment) => shipment.area),
@@ -201,7 +205,7 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     ...deliverySheets.map((sheet) => sheet.area),
     ...(Array.isArray(settings?.areas) ? settings.areas : []),
     form.area,
-  ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  ].filter((a) => a && a.toLowerCase() !== "other"))].sort((a, b) => a.localeCompare(b));
   const filteredAreaOptions = areaOptions.filter((area) => {
     const q = areaSearch.trim().toLowerCase();
     return !q || area.toLowerCase().includes(q);
@@ -221,8 +225,13 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
   const exactAvailableMatch = filteredAvailableShipments.find(
     (shipment) => String(shipment.id || "").toLowerCase() === parcelSearch.trim().toLowerCase()
   );
+  const parcelIdMatches = parcelSearch.trim()
+    ? filteredAvailableShipments.filter((shipment) =>
+        String(shipment.id || "").toLowerCase().includes(parcelSearch.trim().toLowerCase())
+      )
+    : [];
   const parcelCandidateId = parcelToAdd || exactAvailableMatch?.id ||
-    (filteredAvailableShipments.length === 1 ? filteredAvailableShipments[0].id : "");
+    (parcelIdMatches.length === 1 ? parcelIdMatches[0].id : "");
 
   const filteredSheets = deliverySheets.filter((sheet) => {
     const query = searchValue.trim().toLowerCase();
@@ -264,7 +273,8 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     setParcelSearch("");
     setRiderSearch("");
     setRiderDropdownOpen(false);
-    setCustomArea("");
+    setAreaSearch("");
+    setAreaDropdownOpen(false);
     setScannerOpen(false);
     setPrintAfterSave("Yes");
     setFormError("");
@@ -312,7 +322,8 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     setParcelSearch("");
     setRiderSearch("");
     setRiderDropdownOpen(false);
-    setCustomArea("");
+    setAreaSearch(sheet.area || "");
+    setAreaDropdownOpen(false);
     setScannerOpen(false);
     setFormError("");
     setEditorOpen(true);
@@ -365,6 +376,92 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
     setForm((current) => ({ ...current, [field]: value }));
   };
 
+  const selectArea = (area) => {
+    updateFormField("area", area);
+    setAreaDropdownOpen(false);
+    setAreaSearch(area);
+  };
+
+  const commitAreaText = () => {
+    const query = areaSearch.trim();
+    if (!query) return;
+    const lower = query.toLowerCase();
+    const match =
+      areaOptions.find((area) => area.toLowerCase() === lower) ||
+      areaOptions.find((area) => area.toLowerCase().startsWith(lower)) ||
+      filteredAreaOptions[0];
+    if (match) {
+      selectArea(match);
+    } else {
+      updateFormField("area", query);
+      setAreaDropdownOpen(false);
+      setAreaSearch(query);
+    }
+  };
+
+  const renderAreaCombobox = ({ disabled = false, inputClassName, toggleClassName, panelClassName }) => (
+    <div className="relative">
+      <div className="flex">
+        <input
+          required
+          disabled={disabled}
+          value={areaSearch}
+          onFocus={(event) => {
+            if (disabled) return;
+            setAreaSearch(form.area);
+            setAreaDropdownOpen(true);
+            event.target.select();
+          }}
+          onClick={() => { if (!disabled) setAreaDropdownOpen(true); }}
+          onChange={(event) => {
+            setAreaSearch(event.target.value);
+            setAreaDropdownOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setAreaDropdownOpen(false);
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitAreaText();
+            }
+          }}
+          placeholder="Type or select area"
+          className={inputClassName}
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => { if (!disabled) setAreaDropdownOpen((open) => !open); }}
+          className={toggleClassName}
+        >
+          <ChevronDown size={14} className="mx-auto" />
+        </button>
+      </div>
+      {areaDropdownOpen && !disabled && (
+        <div className={panelClassName}>
+          <div className="max-h-44 overflow-y-auto">
+            {filteredAreaOptions.length === 0 ? (
+              <p className="px-2 py-2 text-xs text-slate-500">
+                {areaSearch.trim() ? `No matches — press Enter to use "${areaSearch.trim()}".` : "No areas found."}
+              </p>
+            ) : (
+              filteredAreaOptions.map((area) => (
+                <button
+                  key={area}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectArea(area)}
+                  className="block w-full px-2 py-2 text-left text-xs hover:bg-blue-50"
+                >
+                  {area}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const addShipmentToSheet = (shipment) => {
     if (!shipment) return false;
     if (currentParcelIds.has(shipment.id)) {
@@ -392,10 +489,17 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
 
   const addParcel = () => {
     const requestedId = parcelSearch.trim();
-    const shipment = shipments.find((item) =>
-      item.id === parcelCandidateId ||
-      (requestedId && String(item.id || "").toLowerCase() === requestedId.toLowerCase())
-    );
+    const lower = requestedId.toLowerCase();
+    const exactMatch = requestedId
+      ? shipments.find((item) => String(item.id || "").toLowerCase() === lower)
+      : null;
+    const idMatches = requestedId
+      ? filteredAvailableShipments.filter((item) => String(item.id || "").toLowerCase().includes(lower))
+      : [];
+    const shipment =
+      exactMatch ||
+      (idMatches.length === 1 ? idMatches[0] : null) ||
+      shipments.find((item) => item.id === parcelToAdd);
     if (!shipment) {
       setFormError("Enter a valid CN number or choose a matching parcel.");
       return;
@@ -488,7 +592,7 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
       setFormError("Add at least one parcel to the delivery sheet.");
       return;
     }
-    const deliveryArea = form.area === "Other" ? customArea.trim() : form.area.trim();
+    const deliveryArea = form.area.trim();
     if (!form.origin.trim() || !deliveryArea) {
       setFormError("Select the sheet city and delivery area.");
       return;
@@ -664,37 +768,12 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
               </label>
               <label className="min-w-0 text-[11px] text-slate-800">
                 <span className="mb-1 block">Area:</span>
-                <div className="relative">
-                  <div className="flex">
-                    <input
-                      required
-                      readOnly
-                      value={form.area}
-                      onClick={() => { setAreaDropdownOpen(true); setAreaSearch(""); }}
-                      placeholder="Select area"
-                      className="h-8 w-full min-w-0 cursor-pointer border border-slate-300 bg-white px-2 text-xs"
-                    />
-                    <button type="button" onClick={() => { setAreaDropdownOpen((o) => !o); setAreaSearch(""); }} className="h-8 w-8 shrink-0 border border-l-0 border-slate-300 bg-white text-slate-700">
-                      <ChevronDown size={14} className="mx-auto" />
-                    </button>
-                  </div>
-                  {areaDropdownOpen && (
-                    <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[200px] border border-slate-300 bg-white p-2 shadow-lg">
-                      <input autoFocus value={areaSearch} onChange={(e) => setAreaSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setAreaDropdownOpen(false); if (e.key === "Enter") { e.preventDefault(); if (filteredAreaOptions[0]) { updateFormField("area", filteredAreaOptions[0]); setCustomArea(""); setAreaDropdownOpen(false); } } }} placeholder="Search area" className="mb-2 h-8 w-full border border-slate-300 px-2 text-xs" />
-                      <div className="max-h-44 overflow-y-auto">
-                        {filteredAreaOptions.length === 0 ? (
-                          <p className="px-2 py-2 text-xs text-slate-500">No areas found.</p>
-                        ) : filteredAreaOptions.map((area) => (
-                          <button key={area} type="button" onClick={() => { updateFormField("area", area); setCustomArea(""); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs hover:bg-blue-50">{area}</button>
-                        ))}
-                        <button type="button" onClick={() => { updateFormField("area", "Other"); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 border-t border-slate-100 mt-1">Other (enter manually)</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {form.area === "Other" && (
-                  <input required value={customArea} onChange={(e) => setCustomArea(e.target.value)} placeholder="Enter area" className="mt-1 h-8 w-full border border-slate-300 bg-white px-2 text-xs" />
-                )}
+                {renderAreaCombobox({
+                  inputClassName: "h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs",
+                  toggleClassName: "h-8 w-8 shrink-0 border border-l-0 border-slate-300 bg-white text-slate-700",
+                  panelClassName: "absolute left-0 top-full z-30 mt-1 w-full min-w-[200px] border border-slate-300 bg-white p-2 shadow-lg",
+                })}
+
               </label>
               <label className="min-w-0 text-[11px] text-slate-800">
                 <span className="mb-1 block">Sheet Date:</span>
@@ -843,6 +922,14 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
                 <Button type="button" variant="outline" onClick={() => generateDeliverySheetPDF({ ...form, ...totals, id: selectedSheet?.id, riderName: rider?.name || selectedSheet?.riderName }, settings)}>
                   <FileText size={15} /> Print Sheet
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => generateBarcodeSheet(form.parcels || [], settings)}
+                  title="Print barcode + name labels for this sheet's parcels"
+                >
+                  <Barcode size={15} /> Barcodes
+                </Button>
               </>
             )}
           </div>
@@ -908,38 +995,12 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
             </Field>
             <Field label="Area *">
               <div className="space-y-2">
-                <div className="relative">
-                  <div className="flex">
-                    <input
-                      required
-                      readOnly
-                      disabled={sheetLocked}
-                      value={form.area}
-                      onClick={() => { if (!sheetLocked) { setAreaDropdownOpen(true); setAreaSearch(""); } }}
-                      placeholder="Select area"
-                      className={inputCls + " cursor-pointer"}
-                    />
-                    <button type="button" disabled={sheetLocked} onClick={() => { if (!sheetLocked) { setAreaDropdownOpen((o) => !o); setAreaSearch(""); } }} className="h-8 w-8 shrink-0 border border-l-0 border-slate-300 bg-white text-slate-700 disabled:opacity-40">
-                      <ChevronDown size={14} className="mx-auto" />
-                    </button>
-                  </div>
-                  {areaDropdownOpen && !sheetLocked && (
-                    <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[220px] border border-slate-300 bg-white p-2 shadow-lg">
-                      <input autoFocus value={areaSearch} onChange={(e) => setAreaSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setAreaDropdownOpen(false); if (e.key === "Enter") { e.preventDefault(); if (filteredAreaOptions[0]) { updateFormField("area", filteredAreaOptions[0]); setCustomArea(""); setAreaDropdownOpen(false); } } }} placeholder="Search area" className="mb-2 h-8 w-full border border-slate-300 px-2 text-xs" />
-                      <div className="max-h-44 overflow-y-auto">
-                        {filteredAreaOptions.length === 0 ? (
-                          <p className="px-2 py-2 text-xs text-slate-500">No areas found.</p>
-                        ) : filteredAreaOptions.map((area) => (
-                          <button key={area} type="button" onClick={() => { updateFormField("area", area); setCustomArea(""); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs hover:bg-blue-50">{area}</button>
-                        ))}
-                        <button type="button" onClick={() => { updateFormField("area", "Other"); setAreaDropdownOpen(false); setAreaSearch(""); }} className="block w-full px-2 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 border-t border-slate-100 mt-1">Other (enter manually)</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {form.area === "Other" && (
-                  <input required value={customArea} onChange={(e) => setCustomArea(e.target.value)} disabled={sheetLocked} className={inputCls} placeholder="Enter delivery area" aria-label="Enter delivery area" />
-                )}
+                {renderAreaCombobox({
+                  disabled: sheetLocked,
+                  inputClassName: inputCls + (sheetLocked ? " opacity-60" : ""),
+                  toggleClassName: "h-8 w-8 shrink-0 border border-l-0 border-slate-300 bg-white text-slate-700 disabled:opacity-40",
+                  panelClassName: "absolute left-0 top-full z-30 mt-1 w-full min-w-[220px] border border-slate-300 bg-white p-2 shadow-lg",
+                })}
               </div>
             </Field>
             <Field label="City / Origin *">
@@ -1074,7 +1135,14 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
                       <td className="py-3 pr-3">
                         <select
                           value={parcel.status}
-                          onChange={(event) => updateParcel(parcel.shipmentId, { status: event.target.value })}
+                          onChange={(event) => {
+                            const nextStatus = event.target.value;
+                            updateParcel(parcel.shipmentId, { status: nextStatus });
+                            if (editingDocId && !sheetLocked) {
+                              updateSheetParcelStatus(editingDocId, parcel.shipmentId, nextStatus)
+                                .catch((err) => setFormError(err.message || "Could not update parcel status."));
+                            }
+                          }}
                           disabled={sheetLocked}
                           className="min-w-48 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"
                           aria-label={`Delivery status for ${parcel.trackingId}`}

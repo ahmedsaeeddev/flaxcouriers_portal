@@ -1,11 +1,12 @@
-import React, { useState, useContext, useMemo } from "react";
+import React, { useState, useContext, useMemo, useEffect } from "react";
 import {
   Plus, FileText, ClipboardList, Trash2, Truck, X, Download, RefreshCw,
-  Search, RotateCcw, Copy, Check, ExternalLink, Edit3, Navigation,
+  Search, RotateCcw, Copy, Check, ExternalLink, Edit3, Navigation, Link2, FileDown,
   ChevronDown, ChevronUp, Store, ShoppingCart, MessageCircle, AlertCircle,
-  Calendar, CheckSquare, Square
+  Calendar, CheckSquare, Square, Barcode
 } from "lucide-react";
 import Button from "../components/ui/Button";
+import { StatusPill } from "../components/ui/Badge";
 import TrackShipmentModal from "../components/TrackShipmentModal";
 import CreateBookingModal from "../components/CreateBookingModal";
 import { AppContext } from "../context/AppContext";
@@ -14,8 +15,11 @@ import {
   getShipmentProgress,
   getShipmentStatusProgress,
   SHIPMENT_STATUS_OPTIONS,
+  ACTIVE_SHIPMENT_STATUSES,
+  FAILED_DELIVERY_STATUSES,
+  RETURN_SHIPMENT_STATUSES,
 } from "../lib/constants";
-import { generateAWB, generateAWBs, generateLoadSheet } from "../lib/pdfGenerator";
+import { generateAWB, generateAWBs, generateLoadSheet, generateBarcodeSheet, exportToCSV } from "../lib/pdfGenerator";
 
 function getLocalDateKey(date) {
   const year = date.getFullYear();
@@ -72,12 +76,26 @@ function getQuickDateRange(preset) {
   return { from: getLocalDateKey(start), to: getLocalDateKey(end) };
 }
 
+// Quick status groups for one-tap filtering
+const STATUS_GROUPS = [
+  { id: "All", label: "All", match: () => true },
+  { id: "delivered", label: "Delivered", match: (s) => ["Delivered", "Partial Delivery", "Return Delivered", "Exchange Delivered", "Self-Picked Up"].includes(s) },
+  { id: "transit", label: "In Transit", match: (s) => ACTIVE_SHIPMENT_STATUSES.includes(s) },
+  { id: "pending", label: "Pending / Booked", match: (s) => ["Pending", "Booked", "Confirmed", "Pickup Scheduled", "Pickup Assigned", "Pending Pickup", "On Hold"].includes(s) },
+  { id: "failed", label: "Failed / Refused", match: (s) => FAILED_DELIVERY_STATUSES.includes(s) || ["Returned to Shipper", "Cancelled", "Cancellation Requested", "Delivery Suspended", "Shipment Closed"].includes(s) },
+  { id: "returned", label: "Returned", match: (s) => RETURN_SHIPMENT_STATUSES.includes(s) },
+];
+
 export default function ShipmentsPage({ go }) {
   const {
     shipments,
     userShipments,
     customers,
     thirdPartyRiders,
+    deliverySheets = [],
+    pickups = [],
+    invoices = [],
+    areas = [],
     deleteShipment,
     settings,
     userRole,
@@ -88,11 +106,15 @@ export default function ShipmentsPage({ go }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [statusGroup, setStatusGroup] = useState("All");
   const [cityFilter, setCityFilter] = useState("All");
   const [shipperFilter, setShipperFilter] = useState("All");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [barcodeIds, setBarcodeIds] = useState([]);
+  const [barcodeSearch, setBarcodeSearch] = useState("");
   const [copiedId, setCopiedId] = useState("");
   const [trackingModalShipment, setTrackingModalShipment] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -142,6 +164,8 @@ export default function ShipmentsPage({ go }) {
 
   const filteredShipments = useMemo(() => {
     return baseShipments.filter((r) => {
+      const group = STATUS_GROUPS.find((g) => g.id === statusGroup);
+      if (group && !group.match(r.status || "")) return false;
       if (statusFilter !== "All" && r.status !== statusFilter) return false;
       if (cityFilter !== "All" && r.city !== cityFilter) return false;
       if (shipperFilter !== "All") {
@@ -175,7 +199,7 @@ export default function ShipmentsPage({ go }) {
 
       return true;
     });
-  }, [baseShipments, statusFilter, cityFilter, shipperFilter, dateFrom, dateTo, searchValue]);
+  }, [baseShipments, statusFilter, statusGroup, cityFilter, shipperFilter, dateFrom, dateTo, searchValue]);
 
   // Load Sheet Filtered Parcels Calculation with Shipper Filtering
   const getLoadSheetShipmentsInRange = (fromDate, toDate, shipper = loadSheetShipper, search = loadSheetShipperSearch) => {
@@ -282,9 +306,47 @@ export default function ShipmentsPage({ go }) {
     );
   };
 
+  const handleExportCSV = () => {
+    const headers = ["CN", "Status", "Consignee", "Phone", "City", "Shipper", "COD", "Delivery Charges", "Weight (kg)", "Date"];
+    const rows = filteredShipments.map((s) => [
+      s.id,
+      s.status || "",
+      s.cust || "",
+      s.receiverPhone || "",
+      s.city || "",
+      s.sender || "",
+      s.cod || "",
+      s.deliveryCharges || s.deliveryCharge || "",
+      s.weight || "",
+      s.date || "",
+    ]);
+    exportToCSV(`Shipments_Export_${getLocalDateKey(new Date())}.csv`, headers, rows);
+  };
+
+  const handleBackupJSON = () => {
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      shipments: shipments.map(({ _docId, ...rest }) => rest),
+      customers: customers.map(({ _docId, ...rest }) => rest),
+      riders: thirdPartyRiders.map(({ _docId, ...rest }) => rest),
+      deliverySheets: deliverySheets.map(({ _docId, ...rest }) => rest),
+      pickups: pickups.map(({ _docId, ...rest }) => rest),
+      invoices: invoices.map(({ _docId, ...rest }) => rest),
+      areas: areas.map(({ _docId, ...rest }) => rest),
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `FlaxCouriers_Backup_${getLocalDateKey(new Date())}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleResetFilters = () => {
     setSearchValue("");
     setStatusFilter("All");
+    setStatusGroup("All");
     setCityFilter("All");
     setShipperFilter("All");
     setDateFrom("");
@@ -412,12 +474,57 @@ export default function ShipmentsPage({ go }) {
             <ClipboardList size={14} /> {t("Load Sheet")}
           </Button>
           <Button
+            variant="outline"
+            onClick={handleExportCSV}
+            className="!py-1.5 !px-3 !text-xs font-semibold !border-slate-300"
+          >
+            <Download size={14} /> {t("Export")}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setBarcodeSearch("");
+              setBarcodeIds(filteredShipments.map((s) => s.id));
+              setShowBarcodeModal(true);
+            }}
+            className="!py-1.5 !px-3 !text-xs font-semibold !border-slate-300"
+            title="Select parcels and download barcode + name labels"
+          >
+            <Barcode size={14} /> {t("Barcodes")}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleBackupJSON}
+            className="!py-1.5 !px-3 !text-xs font-semibold !border-slate-300"
+            title="Download all data as JSON backup"
+          >
+            <FileDown size={14} /> {t("Backup")}
+          </Button>
+          <Button
             onClick={() => setShowCreateModal(true)}
             className="!bg-[#10b981] hover:!bg-[#059669] !text-white !py-1.5 !px-3.5 !text-xs font-bold shadow-sm"
           >
             <Plus size={15} /> {t("Book Parcel")}
           </Button>
         </div>
+      </div>
+
+      {/* ── QUICK STATUS FILTER CHIPS ── */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+        {STATUS_GROUPS.map((g) => (
+          <button
+            key={g.id}
+            type="button"
+            onClick={() => { setStatusGroup(g.id); setStatusFilter("All"); }}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border transition ${
+              statusGroup === g.id
+                ? "bg-[#0A2342] text-white border-[#0A2342]"
+                : "bg-white text-slate-600 border-slate-200 hover:border-[#F4C430] hover:text-slate-900"
+            }`}
+          >
+            {t(g.label)}
+          </button>
+        ))}
       </div>
 
       {/* ── COLLAPSIBLE FILTERS BAR ── */}
@@ -475,7 +582,7 @@ export default function ShipmentsPage({ go }) {
               <label className="block text-[11px] font-semibold text-slate-500 mb-1">{t("Status")}</label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setStatusFilter(e.target.value); setStatusGroup("All"); }}
                 className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg outline-none bg-white focus:border-[#F4C430]"
               >
                 <option value="All">{t("All Statuses")}</option>
@@ -891,6 +998,12 @@ export default function ShipmentsPage({ go }) {
                           <span className="block text-[9px] text-slate-400">S.ORDER#</span>
                           <span className="text-slate-700">{s.orderId || s.id.replace("FLX", "")}</span>
                         </div>
+                        {(s.externalRef || s.shopifyId) && (
+                          <div className="text-[10px] font-mono">
+                            <span className="block text-[9px] text-indigo-400">SHOPIFY#</span>
+                            <span className="text-indigo-600 font-bold">{s.externalRef || s.shopifyId}</span>
+                          </div>
+                        )}
                       </td>
 
                       {/* 7. ACTIONS (Notice: No update status button/dropdown!) */}
@@ -909,6 +1022,18 @@ export default function ShipmentsPage({ go }) {
                           className="w-full flex items-center justify-center gap-1 px-2 py-1 text-[10.5px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded transition"
                         >
                           <Navigation size={11} className="text-slate-500" /> {t("Track")}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const link = `${window.location.origin}/track?cn=${s.id}`;
+                            navigator.clipboard?.writeText(link).then(() => alert(`Tracking link copied!\n${link}`)).catch(() => {});
+                          }}
+                          className="w-full flex items-center justify-center gap-1 px-1.5 py-1 text-[10.5px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded transition"
+                          title="Copy public tracking link"
+                        >
+                          <Link2 size={11} /> {t("Link")}
                         </button>
 
                         <button
@@ -967,6 +1092,115 @@ export default function ShipmentsPage({ go }) {
         </div>
       </div>
 
+      {/* ── BARCODE LABELS MODAL ── */}
+      {showBarcodeModal && (() => {
+        const q = barcodeSearch.trim().toLowerCase();
+        const modalList = filteredShipments.filter((s) =>
+          !q || String(s.id).toLowerCase().includes(q) || String(s.cust || "").toLowerCase().includes(q) || String(s.receiverPhone || "").includes(q)
+        );
+        const toggleBarcodeId = (id) =>
+          setBarcodeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+        const selectedBarcodeShipments = modalList.filter((s) => barcodeIds.includes(s.id));
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fadeIn">
+            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+              <div className="flex items-center justify-between px-5 py-3.5 bg-[#0A2342] text-white">
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <Barcode size={15} className="text-amber-400" />
+                  <span>{t("Print Barcode Labels")}</span>
+                </h3>
+                <button onClick={() => setShowBarcodeModal(false)} className="text-white/60 hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="px-5 pt-4 pb-2 flex items-center gap-3">
+                <div className="flex items-center gap-2 rounded-xl px-3 py-2 bg-slate-50 ring-1 ring-slate-200 flex-1">
+                  <Search size={14} className="text-slate-400" />
+                  <input
+                    value={barcodeSearch}
+                    onChange={(e) => setBarcodeSearch(e.target.value)}
+                    placeholder={t("Filter by CN, consignee or phone...")}
+                    className="bg-transparent outline-none text-xs w-full text-slate-700 placeholder:text-slate-400"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBarcodeIds(modalList.map((s) => s.id))}
+                  className="text-[11px] font-bold text-[#0A2342] hover:underline whitespace-nowrap"
+                >
+                  {t("Select all")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBarcodeIds([])}
+                  className="text-[11px] font-bold text-slate-400 hover:text-red-500 whitespace-nowrap"
+                >
+                  {t("Clear")}
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 pb-3 scrollbar-thin">
+                {modalList.length === 0 ? (
+                  <p className="py-8 text-center text-xs text-slate-400">{t("No parcels match the current filters.")}</p>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                        <th className="py-2 w-8"></th>
+                        <th className="py-2">{t("CN")}</th>
+                        <th className="py-2">{t("Consignee")}</th>
+                        <th className="py-2">{t("Phone")}</th>
+                        <th className="py-2">{t("Status")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modalList.map((s) => {
+                        const checked = barcodeIds.includes(s.id);
+                        return (
+                          <tr
+                            key={s.id}
+                            onClick={() => toggleBarcodeId(s.id)}
+                            className={`border-b border-slate-50 cursor-pointer transition ${checked ? "bg-amber-50/60" : "hover:bg-slate-50"}`}
+                          >
+                            <td className="py-2">
+                              <input type="checkbox" checked={checked} onChange={() => toggleBarcodeId(s.id)} onClick={(e) => e.stopPropagation()} className="accent-[#F4C430]" />
+                            </td>
+                            <td className="py-2 font-mono font-semibold text-[#0A2342]">{s.id}</td>
+                            <td className="py-2 text-slate-600">{s.cust || "—"}</td>
+                            <td className="py-2 text-slate-500">{s.receiverPhone || "—"}</td>
+                            <td className="py-2"><StatusPill s={s.status} /></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between bg-slate-50/60">
+                <span className="text-xs font-bold text-slate-500">
+                  {barcodeIds.length} {t("selected")} · {t("24 labels per page")}
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setShowBarcodeModal(false)}>{t("Cancel")}</Button>
+                  <Button
+                    onClick={() => {
+                      generateBarcodeSheet(selectedBarcodeShipments, settings);
+                      setShowBarcodeModal(false);
+                    }}
+                    disabled={selectedBarcodeShipments.length === 0}
+                    className="!bg-emerald-500 hover:!bg-emerald-400 !text-white"
+                  >
+                    <Barcode size={15} /> {t("Download")} ({selectedBarcodeShipments.length})
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── FLOATING BULK ACTIONS BAR (When Checkboxes Are Selected) ── */}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#0A2342] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/10 animate-fadeUp">
@@ -985,6 +1219,22 @@ export default function ShipmentsPage({ go }) {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F4C430] hover:bg-yellow-400 text-[#0A2342] font-bold text-xs transition shadow-xs"
           >
             <ClipboardList size={14} /> {t("Download Load Sheet")}
+          </button>
+          <button
+            onClick={() => generateBarcodeSheet(selectedTableShipments, settings)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs transition shadow-xs"
+          >
+            <Barcode size={14} /> {t("Barcode Labels")}
+          </button>
+          <button
+            onClick={async () => {
+              if (!confirm(`Delete ${selectedIds.length} selected parcel(s)? This cannot be undone.`)) return;
+              for (const id of selectedIds) await deleteShipment(id);
+              setSelectedIds([]);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/90 hover:bg-red-500 text-white font-bold text-xs transition shadow-xs"
+          >
+            <Trash2 size={14} /> {t("Delete")}
           </button>
           <button
             onClick={() => setSelectedIds([])}

@@ -30,6 +30,7 @@ import ApiIntegration from "./pages/ApiIntegration";
 import SupportTickets from "./pages/SupportTickets";
 import SettingsPage from "./pages/SettingsPage";
 import ProfilePage from "./pages/ProfilePage";
+import CommandPalette from "./components/CommandPalette";
 import AreaPage from "./pages/AreaPage";
 import ReasonsPage from "./pages/ReasonsPage";
 import { BRAND_LOGO_URL, PAGE_TITLES } from "./lib/constants";
@@ -74,8 +75,13 @@ function PortalLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
-  const [dark, setDark] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [dark, setDark] = useState(() => localStorage.getItem("fcs_dark_mode") === "1");
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    localStorage.setItem("fcs_dark_mode", dark ? "1" : "0");
+  }, [dark]);
 
   const currentPath = location.pathname.replace(/\/+$/, "") || "/";
   const page = Object.keys(PAGE_PATHS).find(
@@ -111,12 +117,13 @@ function PortalLayout() {
   return (
     <div className={dark ? "dark" : ""} style={{ fontFamily: "Inter, sans-serif" }}>
       <div className={`min-h-screen flex ${dark ? "bg-[#081b36]" : "bg-[#F8F9FA]"}`}>
-        <Sidebar page={page} setPage={go} open={open} setOpen={setOpen} />
-        <div className="flex-1 lg:pl-[260px] min-w-0">
+        <Sidebar page={page} setPage={go} open={open} setOpen={setOpen} collapsed={collapsed} setCollapsed={setCollapsed} />
+        <div className={`flex-1 min-w-0 ${collapsed ? "" : "lg:pl-[260px]"}`}>
           <Topbar
             title={PAGE_TITLES[page][0]}
             subtitle={PAGE_TITLES[page][1]}
-            onMenu={() => setOpen(true)}
+            onMenu={() => { setOpen(true); setCollapsed(false); }}
+            collapsed={collapsed}
             dark={dark}
             setDark={setDark}
             setPage={go}
@@ -135,6 +142,7 @@ function PortalLayout() {
               <Outlet />
             </div>
           )}
+          <CommandPalette />
         </div>
       </div>
     </div>

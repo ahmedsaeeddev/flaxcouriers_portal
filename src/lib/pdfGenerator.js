@@ -242,9 +242,7 @@ function drawMinimalAWB(doc, shipment, settings, barcodeDataUrl, top = 4) {
     doc.setFontSize(7.5);
     doc.text(addressLines.slice(0, 2), textX, detailsBodyY + 9);
     doc.text(`Mobile: ${shipment.receiverPhone || "—"}`, textX, detailsBodyY + 17);
-    doc.text(`Order ID: ${shipment.orderId || shipment.orderID || "—"}`, textX, detailsBodyY + 21);
-    doc.text(`Remarks: ${remarks}`, textX, detailsBodyY + 25, { maxWidth: textWidth });
-    doc.text(`Product: ${product}`, textX, detailsBodyY + 29, { maxWidth: textWidth });
+    doc.text(`City: ${destinationCity}`, textX, detailsBodyY + 21);
 
     const paymentX = left + consigneeWidth;
     if (barcodeDataUrl) {
@@ -570,6 +568,61 @@ export async function generateAWBs(shipments = [], settings = {}) {
   }
 }
 
+// Barcode-only label sheet: QR/barcode + consignee name, many per page
+export function generateBarcodeSheet(shipments = [], settings = {}) {
+  if (!shipments.length) {
+    alert("No parcels to print.");
+    return;
+  }
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const cols = 4;
+  const rows = 6;
+  const perPage = cols * rows;
+  const margin = 8;
+  const gap = 3;
+  const cellW = (pageWidth - margin * 2 - gap * (cols - 1)) / cols;
+  const cellH = (pageHeight - margin * 2 - gap * (rows - 1)) / rows;
+
+  shipments.forEach((shipment, index) => {
+    const pos = index % perPage;
+    if (index > 0 && pos === 0) doc.addPage();
+    const col = pos % cols;
+    const row = Math.floor(pos / cols);
+    const x = margin + col * (cellW + gap);
+    const y = margin + row * (cellH + gap);
+
+    doc.setDrawColor(170, 178, 190);
+    doc.setLineWidth(0.25);
+    doc.rect(x, y, cellW, cellH);
+
+    const name = shipment.cust || shipment.recipient || shipment.receiverName || "—";
+    const id = shipment.id || shipment.trackingId || "";
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(10, 35, 66);
+    doc.text(String(name).slice(0, 26), x + cellW / 2, y + 5.5, { align: "center", maxWidth: cellW - 3 });
+
+    const barcode = getBarcodeDataURL(id);
+    const barcodeY = y + 8;
+    const barcodeH = cellH - 17;
+    if (barcode) {
+      doc.addImage(barcode, "PNG", x + 3, barcodeY, cellW - 6, barcodeH);
+    } else {
+      drawBarcodeFallback(doc, x + 3, barcodeY, cellW - 6, barcodeH);
+    }
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.5);
+    doc.setTextColor(60, 70, 82);
+    doc.text(id, x + cellW / 2, y + cellH - 2.5, { align: "center" });
+  });
+
+  doc.save(`Barcode_Labels_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. LOAD SHEET (PORTRAIT)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -597,15 +650,14 @@ export async function generateLoadSheet(shipments = [], settings = {}) {
     const contentWidth = pageWidth - margin * 2;
     const rowHeight = 8;
     const columns = [
-      { title: "#", width: 7 },
-      { title: "Tracking ID", width: 29 },
-      { title: "Destination", width: 20 },
-      { title: "Shipper", width: 27 },
-      { title: "Consignee", width: 27 },
-      { title: "Order ID", width: 19 },
-      { title: "Pieces", width: 12 },
-      { title: "Weight (kg)", width: 20 },
-      { title: "COD (PKR)", width: 25 },
+      { title: "#", width: 8 },
+      { title: "Tracking ID", width: 34 },
+      { title: "Destination", width: 24 },
+      { title: "Consignee", width: 38 },
+      { title: "Phone", width: 28 },
+      { title: "Pieces", width: 14 },
+      { title: "Weight", width: 16 },
+      { title: "COD (PKR)", width: 30 },
     ];
 
     const truncate = (text, maxWidth) => {
@@ -638,9 +690,9 @@ export async function generateLoadSheet(shipments = [], settings = {}) {
       doc.text(`Pieces  ${totalPieces}`, margin + 75, summaryY + 9);
       doc.text(`Total COD  PKR ${totalCOD.toLocaleString()}`, pageWidth - margin - 5, summaryY + 9, { align: "right" });
 
-      const headerY = 56;
+      const headerY = 50;
       doc.setFillColor(240, 243, 247);
-      doc.roundedRect(margin, headerY - 5, contentWidth, 9, 1, 1, "F");
+      doc.rect(margin, headerY - 5, contentWidth, 9, "F");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(70, 80, 92);
@@ -671,9 +723,8 @@ export async function generateLoadSheet(shipments = [], settings = {}) {
         String(index + 1),
         shipment.id || shipment.trackingId,
         shipment.city,
-        shipment.sender || companyName,
         shipment.cust || shipment.recipient || shipment.receiverName,
-        shipment.orderId || shipment.orderID,
+        shipment.receiverPhone || shipment.phone || "—",
         shipment.pieces || 1,
         shipment.weight || 0,
         amount(shipment).toLocaleString(),
@@ -947,20 +998,18 @@ export async function generateDeliverySheetPDF(sheet = {}, settings = {}) {
 
     doc.setTextColor(10, 35, 66);
     doc.setFontSize(8);
-    doc.text(`Rider: ${sheet.riderName || "—"}  |  Phone: ${sheet.riderPhone || "—"}`, left, 40);
-    doc.text(`Branch: ${sheet.branch || "—"}  |  Origin: ${sheet.origin || "—"}  |  Area: ${sheet.area || "—"}`, left, 47);
-    doc.text(`Date: ${sheet.date || "—"} ${sheet.time || ""}  |  Sheet status: ${sheet.status || "Open"}`, left, 54);
+    doc.text(`Rider: ${sheet.riderName || "—"}  ·  ${sheet.riderPhone || ""}`, left, 40);
+    doc.text(`${sheet.branch || "—"}  ·  ${sheet.area || "—"}  ·  ${sheet.date || "—"}`, left, 46);
     doc.setFontSize(7.5);
-    doc.text(`Parcels: ${parcels.length}  |  Total COD: Rs ${totalCOD.toLocaleString()}  |  Balance: Rs ${balance.toLocaleString()}`, left, 62);
-    doc.text(`Fuel: Rs ${Number(sheet.totalFuelCharges || 0).toLocaleString()}  |  Received: Rs ${Number(sheet.totalReceivedAmount || 0).toLocaleString()}`, left, 68);
+    doc.text(`${parcels.length} parcels  ·  COD Rs ${totalCOD.toLocaleString()}  ·  Balance Rs ${balance.toLocaleString()}`, left, 52);
 
     doc.setFillColor(240, 244, 248);
-    doc.rect(left, 74, contentWidth, 9, "F");
+    doc.rect(left, 58, contentWidth, 8, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
-    columns.forEach((column) => doc.text(column.title, column.x, 80));
+    columns.forEach((column) => doc.text(column.title, column.x, 63.5));
     doc.setFont("helvetica", "normal");
-    return 86;
+    return 68;
   };
 
   let y = await drawPageHeader();

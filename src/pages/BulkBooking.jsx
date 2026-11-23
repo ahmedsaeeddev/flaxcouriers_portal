@@ -1,14 +1,14 @@
 import React, { useState, useContext } from "react";
-import { Upload, Download, FileText, ClipboardList, CheckCircle2 } from "lucide-react";
+import { Upload, Download, FileText, ClipboardList, CheckCircle2, Barcode } from "lucide-react";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { AppContext } from "../context/AppContext";
-import { exportToCSV, generateAWB, generateLoadSheet } from "../lib/pdfGenerator";
+import { exportToCSV, generateAWB, generateLoadSheet, generateBarcodeSheet } from "../lib/pdfGenerator";
 
-const SAMPLE_CSV = `Receiver Name,Receiver Phone,City,Address,Weight (kg),Pieces,COD Amount,Service Type
-MIAN ZEESHAN,03001015516,Faisalabad,Sargodha Road Dawood Textile k pass Ghafoor Town 2,1.0,1,1410,Overnight
-HASSAN NASIR,03019876543,Gujrat,Gulberg III Main Blvd,0.69,1,2000,Overnight
-FAISAL,03334455667,Khairpur,Sector F-7/2 Street 10,0.725,1,2300,Overnight`;
+const SAMPLE_CSV = `Receiver Name,Receiver Phone,City,Address,Weight (kg),Pieces,COD Amount,Service Type,Shopify Order ID
+MIAN ZEESHAN,03001015516,Faisalabad,Sargodha Road Dawood Textile k pass Ghafoor Town 2,1.0,1,1410,Overnight,#1001
+HASSAN NASIR,03019876543,Gujrat,Gulberg III Main Blvd,0.69,1,2000,Overnight,#1002
+FAISAL,03334455667,Khairpur,Sector F-7/2 Street 10,0.725,1,2300,Overnight,#1003`;
 
 export default function BulkBooking({ go }) {
   const { addBulkShipments, shipments, settings } = useContext(AppContext);
@@ -35,6 +35,7 @@ export default function BulkBooking({ go }) {
         pieces: parseInt(parts[5]) || 1,
         codAmount: parseFloat(parts[6]) || 0,
         serviceType: parts[7] || "Overnight",
+        externalRef: parts[8] || "",
       };
     });
 
@@ -101,7 +102,7 @@ export default function BulkBooking({ go }) {
             rows={8}
             value={csvText}
             onChange={(e) => handleParse(e.target.value)}
-            placeholder="Paste CSV text here (Receiver Name, Phone, City, Address, Weight, Pieces, COD Amount, Service Type)..."
+            placeholder="Paste CSV text here (Receiver Name, Phone, City, Address, Weight, Pieces, COD Amount, Service Type, Shopify Order ID)..."
             className="w-full p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono text-slate-700 outline-none focus:border-[#F4C430] focus:ring-2 focus:ring-[#F4C430]/20"
           />
 
@@ -126,6 +127,9 @@ export default function BulkBooking({ go }) {
           <div className="space-y-2.5">
             <Button variant="outline" className="w-full justify-start !py-2.5" onClick={handlePrintAllAWBs}>
               <FileText size={15} /> Print AWBs (one per parcel)
+            </Button>
+            <Button variant="outline" className="w-full justify-start !py-2.5" onClick={() => generateBarcodeSheet(shipments, settings)}>
+              <Barcode size={15} /> Print Barcode Labels (name + QR)
             </Button>
             <Button variant="navy" className="w-full justify-start !py-2.5" onClick={handlePrintLoadSheet}>
               <ClipboardList size={15} /> Print Load Sheet

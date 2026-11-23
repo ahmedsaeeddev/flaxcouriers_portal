@@ -290,6 +290,82 @@ export const getShipmentProgress = (shipment) => {
   );
 };
 
+const TIMELINE_MONTH_INDEX = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+// Best-effort parse of legacy timeline date strings ("Nov 20, 06:37 PM",
+// "Nov. 8, 2026, 5:26 p.m.", "11/23/2026, 4:01:24 PM") into epoch ms.
+export const parseTimelineDate = (raw) => {
+  if (!raw || typeof raw !== "string") return null;
+  const direct = Date.parse(raw);
+  if (!Number.isNaN(direct)) return direct;
+  const m = /^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?,?\s+(.+)$/.exec(raw.trim());
+  if (!m) return null;
+  const month = TIMELINE_MONTH_INDEX[m[1].slice(0, 3).toLowerCase()];
+  if (month === undefined) return null;
+  const year = m[3] ? Number(m[3]) : new Date().getFullYear();
+  const normalized = `${m[1].replace(/\./g, "")} ${m[2]}, ${year} ${m[4].replace(/\./g, "")}`;
+  const parsed = Date.parse(normalized);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+// Sort tracking events oldest → newest. Events with a numeric `ts` sort by it;
+// legacy events fall back to parsing their display date; unparseable/pending
+// entries keep their relative order at the end.
+export const sortTimelineEvents = (events) => {
+  if (!Array.isArray(events)) return [];
+  return events
+    .map((event, index) => ({
+      event,
+      index,
+      time: Number.isFinite(event?.ts) ? event.ts : parseTimelineDate(event?.d),
+    }))
+    .sort((a, b) => {
+      const at = a.time ?? Number.MAX_SAFE_INTEGER;
+      const bt = b.time ?? Number.MAX_SAFE_INTEGER;
+      if (at !== bt) return at - bt;
+      return a.index - b.index;
+    })
+    .map((item) => item.event);
+};
+
+// Prioritized shipment lookup for tracking: exact CN → receiver phone →
+// partial CN → consignee name. Returns null when nothing matches.
+export const findShipmentByQuery = (shipments, query) => {
+  const list = Array.isArray(shipments) ? shipments : [];
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return null;
+
+  const exactCN = list.find((s) => String(s.id || "").toLowerCase() === q);
+  if (exactCN) return exactCN;
+
+  // External store ID (e.g. Shopify order/tracking ID imported via bulk CSV)
+  const extRef = list.find((s) =>
+    String(s.externalRef || s.shopifyId || "").toLowerCase() === q
+  );
+  if (extRef) return extRef;
+
+  const digits = q.replace(/\D/g, "");
+  if (digits.length >= 7) {
+    const byPhone = list.find((s) =>
+      String(s.receiverPhone || "").replace(/\D/g, "").includes(digits)
+    );
+    if (byPhone) return byPhone;
+  }
+
+  const partialCN = list.find((s) => String(s.id || "").toLowerCase().includes(q));
+  if (partialCN) return partialCN;
+
+  const partialExt = list.find((s) =>
+    String(s.externalRef || s.shopifyId || "").toLowerCase().includes(q)
+  );
+  if (partialExt) return partialExt;
+
+  return list.find((s) => String(s.cust || "").toLowerCase().includes(q)) || null;
+};
+
 export const statusStyle = (status) => {
   const legacyStyles = {
     Released: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -327,7 +403,6 @@ export const ADMIN_NAV_SECTIONS = [
     items: [
       { id: "shipments", label: "My Stores Orders", icon: "Package" },
       { id: "create", label: "Create Booking", icon: "PackagePlus" },
-      { id: "bulk", label: "Order Sync / Bulk CSV", icon: "Boxes" },
       { id: "area", label: "Area", icon: "ClipboardList" },
       { id: "reasons", label: "Reasons List", icon: "FileText" },
       { id: "pickup-sheet", label: "Pickup Sheet", icon: "ClipboardList" },

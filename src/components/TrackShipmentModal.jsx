@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from "react";
 import { X, MapPin } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { AppContext } from "../context/AppContext";
+import { findShipmentByQuery, sortTimelineEvents } from "../lib/constants";
 
 function formatTrackingDate(rawDate) {
   if (!rawDate) return "Nov. 8, 2026, 5:26 p.m.";
@@ -31,7 +32,8 @@ export default function TrackShipmentModal({ isOpen, onClose, shipment, allShipm
   const appContext = useContext(AppContext);
   const deliverySheets = appContext?.deliverySheets || [];
   const thirdPartyRiders = appContext?.thirdPartyRiders || [];
-  const [activeShipment, setActiveShipment] = useState(shipment);
+  const contextShipments = appContext?.shipments || [];
+  const [activeId, setActiveId] = useState(shipment?.id || "");
   const [inputVal, setInputVal] = useState("");
 
   const getRealRider = (s) => {
@@ -61,24 +63,25 @@ export default function TrackShipmentModal({ isOpen, onClose, shipment, allShipm
   };
 
   useEffect(() => {
-    setActiveShipment(shipment);
+    setActiveId(shipment?.id || "");
     setInputVal(shipment?.id || "");
   }, [shipment]);
+
+  // Always resolve the freshest shipment doc by ID so status/timeline updates
+  // (e.g. delivery sheet saves) are reflected without reopening the modal.
+  const activeShipment =
+    contextShipments.find((s) => s.id === activeId) ||
+    allShipments.find((s) => s.id === activeId) ||
+    (activeId && activeId === shipment?.id ? shipment : null);
 
   if (!isOpen || !activeShipment) return null;
 
   const handleSearch = (e) => {
     if (e) e.preventDefault();
     if (!inputVal.trim()) return;
-    const clean = inputVal.trim().toLowerCase();
-    const found = allShipments.find(
-      (s) =>
-        s.id?.toLowerCase() === clean ||
-        s.cust?.toLowerCase().includes(clean) ||
-        (s.receiverPhone && s.receiverPhone.includes(clean))
-    );
+    const found = findShipmentByQuery(allShipments, inputVal);
     if (found) {
-      setActiveShipment(found);
+      setActiveId(found.id);
     }
   };
 
@@ -88,7 +91,7 @@ export default function TrackShipmentModal({ isOpen, onClose, shipment, allShipm
 
   // Build tracking history rows
   const timelineEvents = Array.isArray(activeShipment.timeline) && activeShipment.timeline.length > 0
-    ? activeShipment.timeline.filter((e) => e.done || e.d !== "Pending")
+    ? sortTimelineEvents(activeShipment.timeline).filter((e) => e.done || e.d !== "Pending")
     : [
         {
           t: `${activeShipment.status || "Order"} | Consignment Booked`,

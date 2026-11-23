@@ -5,8 +5,8 @@ export default function Card({ children, className = "", dark, style, onClick, .
     <div
       onClick={onClick}
       style={style}
-      className={`rounded-2xl shadow-[0_1px_2px_rgba(10,35,66,0.06),0_8px_24px_-12px_rgba(10,35,66,0.12)] ring-1 ${
-        dark ? "bg-[#0F294D] ring-white/5" : "bg-white ring-slate-900/[0.04]"
+      className={`rounded-[20px] border transition-shadow duration-200 hover:shadow-[0_2px_4px_rgba(10,35,66,0.05),0_16px_40px_-16px_rgba(10,35,66,0.18)] ${
+        dark ? "bg-[#0d223f] border-white/[0.07]" : "bg-white border-slate-200/70"
       } ${className}`}
       {...props}
     >

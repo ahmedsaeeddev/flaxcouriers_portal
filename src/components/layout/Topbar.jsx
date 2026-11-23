@@ -1,10 +1,12 @@
 import React, { useState, useContext, useRef, useEffect } from "react";
-import { Menu, Search, Sun, Moon, Bell, ShieldCheck, ShoppingBag, Globe } from "lucide-react";
+import { Menu, Search, Sun, Moon, Bell, ShieldCheck, ShoppingBag, Globe, Command, Trash2 } from "lucide-react";
+import { collection, getDocs, deleteDoc, doc } from "firebase/firestore";
+import { db } from "../../firebase/firebase";
 import { AppContext } from "../../context/AppContext";
 import { useLanguage } from "../../context/LanguageContext";
 import { BRAND_LOGO_URL } from "../../lib/constants";
 
-export default function Topbar({ title, subtitle, onMenu, dark, setDark, setPage }) {
+export default function Topbar({ title, subtitle, onMenu, dark, setDark, setPage, collapsed }) {
   const { profile, settings, notifications, userRole, currentShipper } = useContext(AppContext);
   const { language, toggleLanguage, t } = useLanguage();
   const [showNotifPanel, setShowNotifPanel] = useState(false);
@@ -37,7 +39,7 @@ export default function Topbar({ title, subtitle, onMenu, dark, setDark, setPage
         dark ? "bg-[#0A2342]/90 border-white/10" : "bg-white/85 border-slate-100"
       }`}
     >
-      <button className="lg:hidden" onClick={onMenu}>
+      <button className={collapsed ? "" : "lg:hidden"} onClick={onMenu} aria-label="Open sidebar">
         <Menu className={dark ? "text-white" : "text-slate-700"} size={22} />
       </button>
       <img src={logoUrl} alt="Flax Couriers" className="h-8 w-8 rounded-lg bg-white p-0.5 object-contain lg:hidden" />
@@ -92,7 +94,26 @@ export default function Topbar({ title, subtitle, onMenu, dark, setDark, setPage
           placeholder={t("Search tracking ID, parcel...")}
           className={`bg-transparent outline-none text-xs w-full ${dark ? "text-white placeholder:text-white/30" : "text-slate-700 placeholder:text-slate-400"}`}
         />
+        <button
+          onClick={() => setPage?.("track")}
+          className={`hidden xl:flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${dark ? "bg-white/10 text-white/50" : "bg-slate-100 text-slate-400"}`}
+        >
+          ⌘K
+        </button>
       </div>
+
+      {/* Command palette shortcut */}
+      <button
+        onClick={() => window.dispatchEvent(new Event("fcs_open_palette"))}
+        className={`hidden sm:flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ring-1 transition-all ${
+          dark ? "bg-white/5 ring-white/10 text-white/60 hover:bg-white/10" : "bg-slate-50 ring-slate-200 text-slate-500 hover:bg-slate-100"
+        }`}
+        title="Command palette (Ctrl+K)"
+      >
+        <Command size={14} />
+        <span className="hidden md:inline">Search…</span>
+        <kbd className={`text-[9px] font-bold px-1 py-0.5 rounded ${dark ? "bg-white/10" : "bg-slate-200/70"}`}>Ctrl K</kbd>
+      </button>
 
       {/* Dark mode toggle */}
       <button
@@ -101,6 +122,15 @@ export default function Topbar({ title, subtitle, onMenu, dark, setDark, setPage
       >
         {dark ? <Sun size={16} /> : <Moon size={16} />}
       </button>
+
+      {/* Live sync indicator */}
+      <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mr-1" title="Connected — data updates in real time">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+        </span>
+        LIVE
+      </div>
 
       {/* Notifications Popover */}
       <div className="relative" ref={notifRef}>
@@ -120,6 +150,20 @@ export default function Topbar({ title, subtitle, onMenu, dark, setDark, setPage
             <div className="p-3.5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-white/5">
               <span className="font-semibold text-xs uppercase tracking-wider">{t("System Activity")}</span>
               <span className="text-[10px] font-medium text-slate-400 bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded-full">{notifications.length} {t("Logs")}</span>
+              {notifications.length > 0 && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const snap = await getDocs(collection(db, "notifications"));
+                      await Promise.all(snap.docs.map((d) => deleteDoc(doc(db, "notifications", d.id))));
+                    } catch (e) { console.error(e); }
+                  }}
+                  className="text-slate-400 hover:text-red-500 transition"
+                  title={t("Clear all notifications")}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
             <div className="max-h-72 overflow-y-auto scrollbar-thin divide-y divide-slate-50 dark:divide-white/5">
               {notifications.length === 0 ? (

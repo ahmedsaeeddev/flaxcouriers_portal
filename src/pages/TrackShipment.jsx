@@ -1,36 +1,39 @@
 import React, { useState, useEffect, useContext } from "react";
-import { Search, PackageSearch, CheckCircle2, Circle, MapPin, Copy, Check, Info, AlertTriangle, UserCheck } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Search, PackageSearch, CheckCircle2, Circle, MapPin, Copy, Check, Info, AlertTriangle, UserCheck, Link2 } from "lucide-react";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { StatusPill } from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
 import { useLanguage } from "../context/LanguageContext";
-import { RETURN_SHIPMENT_STATUSES } from "../lib/constants";
+import { findShipmentByQuery, RETURN_SHIPMENT_STATUSES, sortTimelineEvents } from "../lib/constants";
 
 export default function TrackShipment() {
   const { shipments, settings, deliverySheets = [], thirdPartyRiders = [] } = useContext(AppContext);
   const { t } = useLanguage();
+  const [searchParams] = useSearchParams();
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState(() => {
-    return localStorage.getItem("fcs_track_search_query") || "FLX93820438";
+    return searchParams.get("cn") || localStorage.getItem("fcs_track_search_query") || "";
   });
   const [foundShipment, setFoundShipment] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [recentSearches, setRecentSearches] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("fcs_recent_tracks") || "[]"); } catch { return []; }
+  });
 
   const searchShipment = (query) => {
-    if (!query.trim()) {
-      setFoundShipment(null);
-      setHasSearched(true);
-      return;
+    const trimmed = query.trim();
+    if (trimmed) {
+      localStorage.setItem("fcs_track_search_query", trimmed);
+      setRecentSearches((prev) => {
+        const next = [trimmed, ...prev.filter((x) => x !== trimmed)].slice(0, 6);
+        localStorage.setItem("fcs_recent_tracks", JSON.stringify(next));
+        return next;
+      });
     }
-    const cleanQuery = query.trim().toLowerCase();
-    const match = shipments.find(
-      (s) =>
-        s.id.toLowerCase() === cleanQuery ||
-        s.cust.toLowerCase().includes(cleanQuery) ||
-        (s.receiverPhone && s.receiverPhone.includes(cleanQuery))
-    );
-    setFoundShipment(match || null);
+    setFoundShipment(trimmed ? findShipmentByQuery(shipments, trimmed) : null);
     setHasSearched(true);
   };
 
@@ -54,6 +57,13 @@ export default function TrackShipment() {
     navigator.clipboard.writeText(id);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyLink = () => {
+    const url = `${window.location.origin}/track?cn=${encodeURIComponent(foundShipment.id)}`;
+    navigator.clipboard.writeText(url);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   };
 
   const handleTrackSubmit = (e) => {
@@ -118,6 +128,8 @@ export default function TrackShipment() {
     return { name: t("Pending Driver Assignment"), phone: "" };
   };
 
+  const sortedTimeline = sortTimelineEvents(foundShipment?.timeline || []);
+
   const NAVY = settings.primaryColor;
   const YELLOW = settings.accentColor;
 
@@ -139,6 +151,21 @@ export default function TrackShipment() {
             <PackageSearch size={16} /> Track
           </Button>
         </form>
+        {recentSearches.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recent:</span>
+            {recentSearches.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => { setSearchQuery(item); searchShipment(item); }}
+                className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-[#FDF3D3] hover:text-[#0A2342] transition"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        )}
       </Card>
 
       {hasSearched && !foundShipment ? (
@@ -159,6 +186,11 @@ export default function TrackShipment() {
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tracking ID</p>
                 <div className="flex items-center gap-2">
                   <span className="font-display font-bold text-[#0A2342] text-lg">{foundShipment.id}</span>
+                  {(foundShipment.externalRef || foundShipment.shopifyId) && (
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                      Shopify: {foundShipment.externalRef || foundShipment.shopifyId}
+                    </span>
+                  )}
                   <button onClick={() => handleCopy(foundShipment.id)} className="text-slate-400 hover:text-[#0A2342]">
                     {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                   </button>
@@ -167,9 +199,14 @@ export default function TrackShipment() {
               <StatusPill s={foundShipment.status} />
             </div>
 
+            <Button variant="outline" onClick={handleCopyLink} className="mb-4 !py-2 !text-xs">
+              {linkCopied ? <Check size={14} className="text-emerald-500" /> : <Link2 size={14} />}
+              {linkCopied ? "Link copied!" : "Copy tracking link"}
+            </Button>
+
             <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-4">Tracking History</p>
             <div className="pl-2 space-y-0">
-              {(foundShipment.timeline || []).map((s, i) => (
+              {sortedTimeline.map((s, i) => (
                 <div key={i} className="flex gap-4 relative">
                   <div className="flex flex-col items-center">
                     {s.done ? (
@@ -177,13 +214,14 @@ export default function TrackShipment() {
                     ) : (
                       <Circle size={20} className="text-slate-300 shrink-0 bg-white z-10" />
                     )}
-                    {i < (foundShipment.timeline || []).length - 1 && (
+                    {i < sortedTimeline.length - 1 && (
                       <div className={`w-px flex-1 my-1 -translate-y-2 ${s.done ? "bg-emerald-200" : "bg-slate-100"}`} style={{ minHeight: 40 }} />
                     )}
                   </div>
                   <div className="pb-8">
                     <p className={`text-[13.5px] font-semibold ${s.done ? "text-[#0A2342]" : "text-slate-400"}`}>{s.t}</p>
                     <p className="text-[12px] text-slate-400">{s.d}</p>
+                    {s.note && <p className="text-[11px] text-slate-400 italic mt-0.5">{s.note}</p>}
                   </div>
                 </div>
               ))}
@@ -268,7 +306,7 @@ export default function TrackShipment() {
           </div>
           <h3 className="font-display font-bold text-[#0A2342] text-base mb-1">Active Tracker</h3>
           <p className="text-[13px] text-slate-400">
-            Enter a valid tracking code above (e.g. <code>FLX93820438</code>) to view the parcel status, booking logs, and assigned riders.
+            Enter a valid tracking code above to view the parcel status, booking logs, and assigned riders.
           </p>
         </Card>
       )}

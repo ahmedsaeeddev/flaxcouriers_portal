@@ -15,7 +15,7 @@ const ICONS = {
   FileText, BarChart3, Plug, LifeBuoy, Settings, User, Boxes,
 };
 
-export default function Sidebar({ page, setPage, open, setOpen }) {
+export default function Sidebar({ page, setPage, open, setOpen, collapsed, setCollapsed }) {
   const { settings, userRole, setUserRole } = useContext(AppContext);
   const { language, toggleLanguage, t } = useLanguage();
   const NAVY   = settings.primaryColor || "#0A2342";
@@ -39,26 +39,31 @@ export default function Sidebar({ page, setPage, open, setOpen }) {
     <>
       {open && <div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={() => setOpen(false)} />}
       <aside
-        className={`fixed z-40 lg:z-0 top-0 left-0 h-full w-[260px] text-white flex flex-col transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed z-40 lg:z-0 top-0 left-0 h-full w-[260px] text-white flex flex-col transition-transform duration-300 ${
           open ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${collapsed ? "lg:-translate-x-full" : "lg:translate-x-0"}`}
         style={{ background: `linear-gradient(180deg, ${NAVY} 0%, #081b36 100%)` }}
       >
         {/* Brand + Close */}
-        <div className="flex items-center gap-3 px-5 pt-6 pb-4">
+        <div className="flex items-center gap-3 px-5 pt-5 pb-4">
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white p-1.5 shadow-md"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white p-1.5 shadow-lg ring-1 ring-white/20"
           >
             <img src={logoUrl} alt="Flax Couriers" className="h-full w-full object-contain" />
           </div>
-          <div>
-            <div className="font-display font-bold text-[15px] leading-none tracking-wide uppercase">{firstWord}</div>
-            <div className="text-[10px] tracking-[0.2em] text-white/50 mt-1 uppercase">{restOfWords}</div>
+          <div className="min-w-0">
+            <div className="font-display font-bold text-[15px] leading-none tracking-wide uppercase truncate">{firstWord}</div>
+            <div className="text-[10px] tracking-[0.2em] text-white/50 mt-1 uppercase truncate">{restOfWords}</div>
           </div>
-          <button className="ml-auto lg:hidden text-white/60" onClick={() => setOpen(false)}>
-            <X size={20} />
+          <button
+            onClick={() => { setOpen(false); setCollapsed?.(true); }}
+            aria-label="Close sidebar"
+            className="ml-auto w-7 h-7 rounded-lg flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-all"
+          >
+            <X size={16} />
           </button>
         </div>
+        <div className="mx-5 mb-3 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
 
         {/* Role Badge */}
         <div className="px-3 mb-3">
@@ -99,7 +104,9 @@ export default function Sidebar({ page, setPage, open, setOpen }) {
                     key={item.id}
                     onClick={() => { setPage(item.id); setOpen(false); }}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium mb-0.5 transition-all relative group ${
-                      active ? "text-white" : "text-white/60 hover:text-white hover:bg-white/5"
+                      active
+                        ? "text-white shadow-md"
+                        : "text-white/60 hover:text-white hover:bg-white/5 hover:translate-x-0.5"
                     }`}
                     style={active ? { background: `${YELLOW}1f` } : {}}
                   >

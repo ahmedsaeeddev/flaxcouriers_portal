@@ -40,3 +40,93 @@ body {
   margin: 0;
   background: #f8f9fa;
 }
+
+/* ── Modern UI polish ── */
+body {
+  background:
+    radial-gradient(1200px 500px at 85% -10%, rgba(244,196,48,0.06), transparent 60%),
+    radial-gradient(900px 420px at -10% 0%, rgba(10,35,66,0.05), transparent 55%),
+    #f8f9fa;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.dark body {
+  background:
+    radial-gradient(1200px 500px at 85% -10%, rgba(244,196,48,0.05), transparent 60%),
+    #081b36;
+}
+
+::selection { background: rgba(244,196,48,0.35); }
+
+/* Slimmer, themed scrollbars */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; border: 2px solid transparent; background-clip: padding-box; }
+.dark ::-webkit-scrollbar-thumb { background: #2a3f63; border: 2px solid transparent; background-clip: padding-box; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #3d5680; border: 2px solid transparent; background-clip: padding-box; }
+
+/* Inputs: consistent modern focus ring */
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: none;
+}
+
+/* Table row hover lift */
+tbody tr { transition: background-color .15s ease; }
+
+/* Softer modal/sheet shadows */
+.shadow-2xl { box-shadow: 0 24px 60px -12px rgba(8,27,54,0.35) !important; }
+
+/* ── Global dark-mode overrides for hardcoded light utilities ── */
+.dark body { background: #081b36; }
+
+/* Surfaces */
+.dark .bg-white { background-color: #0d223f; }
+.dark .bg-slate-50 { background-color: #10233f; }
+.dark .bg-slate-100 { background-color: #16304f; }
+.dark .bg-slate-200 { background-color: #1d3a5f; }
+.dark .bg-gray-50 { background-color: #10233f; }
+.dark .bg-gray-100 { background-color: #16304f; }
+.dark .bg-\[\#F8F9FA\] { background-color: #081b36; }
+.dark .bg-\[\#FDF3D3\] { background-color: #3a2f10; }
+
+/* Text */
+.dark .text-slate-900, .dark .text-slate-800, .dark .text-\[\#0A2342\], .dark .text-navy { color: #e8eef7; }
+.dark .text-slate-700 { color: #c9d6e6; }
+.dark .text-slate-600 { color: #a9bcd4; }
+.dark .text-slate-500 { color: #8ba0ba; }
+.dark .text-slate-400 { color: #6b7f99; }
+.dark .text-gray-900, .dark .text-gray-800, .dark .text-gray-700 { color: #e8eef7; }
+.dark .text-gray-600, .dark .text-gray-500 { color: #8ba0ba; }
+
+/* Borders & rings */
+.dark .border-slate-100, .dark .border-slate-200, .dark .border-slate-300 { border-color: rgba(255,255,255,.12); }
+.dark .border-gray-100, .dark .border-gray-200, .dark .border-gray-300 { border-color: rgba(255,255,255,.12); }
+.dark .ring-slate-200, .dark .ring-slate-300 { --tw-ring-color: rgba(255,255,255,.15); }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255,255,255,.08); }
+
+/* Common hovers */
+.dark .hover\:bg-slate-50:hover { background-color: #16304f; }
+.dark .hover\:bg-slate-100:hover { background-color: #1d3a5f; }
+.dark .hover\:bg-white:hover { background-color: #16304f; }
+.dark .hover\:bg-gray-50:hover { background-color: #16304f; }
+.dark .hover\:bg-gray-100:hover { background-color: #1d3a5f; }
+
+/* Inputs & selects keep readable */
+.dark input, .dark select, .dark textarea { color-scheme: dark; }
+.dark input::placeholder, .dark textarea::placeholder { color: #5f7391; }
+
+/* Light-tinted badges stay legible on dark */
+.dark .bg-amber-50 { background-color: #3d2f0a; }
+.dark .bg-yellow-50 { background-color: #3d2f0a; }
+.dark .bg-emerald-50 { background-color: #0b2e22; }
+.dark .bg-green-50 { background-color: #0b2e22; }
+.dark .bg-red-50, .dark .bg-rose-50 { background-color: #33141c; }
+.dark .bg-blue-50 { background-color: #0e2545; }
+.dark .bg-indigo-50 { background-color: #171d3a; }
+.dark .bg-purple-50 { background-color: #241a3d; }
+.dark .bg-orange-50 { background-color: #331d0b; }
+
+/* Shadows softer on dark */
+.dark .shadow-sm, .dark .shadow, .dark .shadow-md, .dark .shadow-lg, .dark .shadow-xl { box-shadow: 0 4px 20px rgba(0,0,0,.35); }

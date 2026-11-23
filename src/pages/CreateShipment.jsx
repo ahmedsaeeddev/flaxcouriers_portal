@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from "react";
 import {
   Package, Truck, User, CreditCard, Search, CheckCircle2,
-  FileText, ClipboardList, RefreshCcw, X, Plus, Sparkles, ArrowRight
+  FileText, ClipboardList, RefreshCcw, X, Plus, Sparkles, ArrowRight, Barcode
 } from "lucide-react";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -10,7 +10,7 @@ import Badge from "../components/ui/Badge";
 import { AppContext } from "../context/AppContext";
 import { useLanguage } from "../context/LanguageContext";
 import { inputCls } from "../lib/constants";
-import { generateAWB, generateLoadSheet } from "../lib/pdfGenerator";
+import { generateAWB, generateLoadSheet, generateBarcodeSheet } from "../lib/pdfGenerator";
 import AIScanModal from "../components/AIScanModal";
 
 const CITIES = [
@@ -335,6 +335,13 @@ export default function CreateShipment({ go }) {
                 className="!bg-[#F4C430] hover:!bg-yellow-400 !text-[#0A2342] text-xs font-bold"
               >
                 <FileText size={14} /> {t("Print AWB Bill")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => generateBarcodeSheet([submittedShipment], settings)}
+                className="!bg-white/10 !ring-white/20 !text-white text-xs"
+              >
+                <Barcode size={14} /> {t("Barcode Label")}
               </Button>
               <Button
                 variant="outline"
