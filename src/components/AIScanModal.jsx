@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
+import { createPortal } from "react-dom";
 import {
   X, Camera, Upload, Sparkles, AlertTriangle, CheckCircle, RefreshCcw,
   MessageSquare, Send, Check, AlertCircle, Copy, Info, ChevronRight
@@ -342,19 +343,19 @@ export default function AIScanModal({ isOpen, onClose, onComplete }) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center p-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-md">
       {/* Glassmorphic Backdrop */}
-      <div 
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity" 
+      <div
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity"
         onClick={() => {
           stopCamera();
           onClose();
-        }} 
+        }}
       />
 
       {/* Main Container */}
-      <div className="bg-white/95 dark:bg-[#0A2342]/95 border border-white/20 rounded-3xl w-full max-w-6xl h-[85vh] flex flex-col shadow-2xl relative z-10 overflow-hidden animate-fadeUp">
+      <div className="bg-white/95 dark:bg-[#0A2342]/95 border border-white/20 rounded-3xl w-full max-w-6xl h-[80vh] sm:h-[80vh] flex flex-col shadow-2xl relative z-10 my-4 sm:my-6 animate-fadeUp">
         {/* Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-white/10">
           <div className="flex items-center gap-2">
@@ -873,4 +874,6 @@ export default function AIScanModal({ isOpen, onClose, onComplete }) {
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

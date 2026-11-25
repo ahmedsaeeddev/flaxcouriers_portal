@@ -399,7 +399,7 @@ export default function AreaPage({ go }) {
       {/* ── ADD AREA MODAL ── */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-300 overflow-hidden">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-300 overflow-hidden max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-3.5 bg-[#0A2342] text-white">
               <h3 className="font-bold text-sm">
                 {t("Add Area")}

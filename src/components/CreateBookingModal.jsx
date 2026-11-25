@@ -1,4 +1,5 @@
 import React, { useState, useContext, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Edit2, Plus, RefreshCw, Check } from "lucide-react";
 import { AppContext } from "../context/AppContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -107,9 +108,9 @@ export default function CreateBookingModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-5 backdrop-blur-xs animate-fadeIn overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-5 backdrop-blur-xs animate-fadeIn">
       {/* Outer Modal Container */}
-      <div className="w-full max-w-4xl bg-[#f4f5f7] rounded-xl shadow-2xl overflow-hidden border border-slate-300 my-6">
+      <div className="w-full max-w-4xl bg-[#f4f5f7] rounded-xl shadow-2xl overflow-hidden border border-slate-300 my-4 sm:my-6 max-h-[85vh] flex flex-col">
         
         {/* Modal Top Header Bar */}
         <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200">
@@ -126,7 +127,7 @@ export default function CreateBookingModal({ isOpen, onClose }) {
         </div>
 
         {/* Modal Form Content */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
           
           {/* Inner Card with Yellow Header */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
@@ -537,4 +538,6 @@ export default function CreateBookingModal({ isOpen, onClose }) {
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

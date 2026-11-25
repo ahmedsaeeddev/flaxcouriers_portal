@@ -1,9 +1,10 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useRef, useState } from "react";
 import { Camera, Check, Plus, Search, Trash2 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
+import QRScannerModal from "../components/QRScannerModal";
 import { AppContext } from "../context/AppContext";
-import { PICKUP_WAITING_STATUSES } from "../lib/constants";
+import { ARRIVAL_WAITING_STATUSES } from "../lib/constants";
 
 function getTrackingId(payload) {
   const value = String(payload || "").trim();
@@ -18,24 +19,19 @@ function getTrackingId(payload) {
 }
 
 export default function PickupSheetPage() {
-  const { shipments, markShipmentsPickedUp } = useContext(AppContext);
+  const { shipments, markShipmentsArrived } = useContext(AppContext);
   const [searchValue, setSearchValue] = useState("");
-  const [manualCode, setManualCode] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannedIds, setScannedIds] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
-  const videoRef = useRef(null);
-  const scannerHandlerRef = useRef(null);
   const scannedIdsRef = useRef([]);
-  const lastScanRef = useRef("");
-  const lastScanTimeoutRef = useRef(null);
 
   const availableShipments = shipments.filter(
     (shipment) =>
-      PICKUP_WAITING_STATUSES.includes(shipment.status) &&
-      shipment.pickupStatus !== "Picked Up" &&
-      !shipment.pickedUpAt
+      ARRIVAL_WAITING_STATUSES.includes(shipment.status) &&
+      shipment.arrivalStatus !== "Arrived at Destination Hub" &&
+      !shipment.arrivedAt
   );
   const scannedShipments = scannedIds
     .map((id) => shipments.find((shipment) => shipment.id === id))
@@ -46,7 +42,17 @@ export default function PickupSheetPage() {
       .some((value) => String(value || "").toLowerCase().includes(query));
   });
 
-  const addScannedParcel = useCallback((payload) => {
+  const handleScanComplete = (shipmentId) => {
+    if (scannedIdsRef.current.includes(shipmentId)) {
+      setFeedback({ type: "error", text: `Parcel ${shipmentId} is already in the scanned list.` });
+      return;
+    }
+    const nextIds = [...scannedIdsRef.current, shipmentId];
+    scannedIdsRef.current = nextIds;
+    setScannedIds(nextIds);
+  };
+
+  const addScannedParcel = (payload) => {
     const trackingId = getTrackingId(payload);
     if (!trackingId) return;
 
@@ -58,8 +64,8 @@ export default function PickupSheetPage() {
       return;
     }
 
-    if (!PICKUP_WAITING_STATUSES.includes(shipment.status) || shipment.pickupStatus === "Picked Up" || shipment.pickedUpAt) {
-      setFeedback({ type: "error", text: `Parcel ${trackingId} is not waiting for pickup.` });
+    if (!ARRIVAL_WAITING_STATUSES.includes(shipment.status) || shipment.arrivalStatus === "Arrived at Destination Hub" || shipment.arrivedAt) {
+      setFeedback({ type: "error", text: `Parcel ${trackingId} is not eligible for arrival.` });
       return;
     }
 
@@ -72,61 +78,6 @@ export default function PickupSheetPage() {
     scannedIdsRef.current = nextIds;
     setScannedIds(nextIds);
     setFeedback({ type: "success", text: `Added parcel ${shipment.id}.` });
-  }, [shipments]);
-
-  scannerHandlerRef.current = addScannedParcel;
-
-  useEffect(() => {
-    if (!scannerOpen) return undefined;
-
-    let controls;
-    let cancelled = false;
-    const startScanner = async () => {
-      try {
-        const { BrowserQRCodeReader } = await import("@zxing/browser");
-        if (cancelled) return;
-
-        const reader = new BrowserQRCodeReader();
-        controls = await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-          if (!result) return;
-          const payload = result.getText();
-          if (lastScanRef.current === payload) return;
-
-          lastScanRef.current = payload;
-          window.clearTimeout(lastScanTimeoutRef.current);
-          lastScanTimeoutRef.current = window.setTimeout(() => {
-            lastScanRef.current = "";
-          }, 1500);
-          scannerHandlerRef.current?.(payload);
-        });
-        if (cancelled) controls.stop();
-      } catch (error) {
-        if (cancelled) return;
-        setScannerOpen(false);
-        setFeedback({
-          type: "error",
-          text: `Could not start the camera: ${error.message || "Check camera permission and try again."}`,
-        });
-      }
-    };
-
-    startScanner();
-
-    return () => {
-      cancelled = true;
-      controls?.stop();
-    };
-  }, [scannerOpen]);
-
-  useEffect(() => () => {
-    window.clearTimeout(lastScanTimeoutRef.current);
-  }, []);
-
-  const handleManualScan = (event) => {
-    event.preventDefault();
-    if (!manualCode.trim()) return;
-    addScannedParcel(manualCode);
-    setManualCode("");
   };
 
   const removeScannedParcel = (id) => {
@@ -141,10 +92,10 @@ export default function PickupSheetPage() {
     setFeedback(null);
 
     try {
-      const count = await markShipmentsPickedUp(scannedIds);
+      const count = await markShipmentsArrived(scannedIds);
       scannedIdsRef.current = [];
       setScannedIds([]);
-      setFeedback({ type: "success", text: `${count} parcel${count === 1 ? "" : "s"} marked as picked up.` });
+      setFeedback({ type: "success", text: `${count} parcel${count === 1 ? "" : "s"} marked as arrived at station.` });
     } catch (error) {
       setFeedback({ type: "error", text: error.message || "Could not update the scanned parcels." });
     } finally {
@@ -156,20 +107,20 @@ export default function PickupSheetPage() {
     <div className="space-y-5 p-5 lg:p-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-bold text-[#0A2342]">Pickup Sheet</h2>
+          <h2 className="font-display text-xl font-bold text-[#0A2342]">Arrival Sheet</h2>
           <p className="mt-1 text-[12.5px] text-slate-400">
-            Scan or add parcels awaiting pickup, then confirm them together.
+            Scan or add parcels arriving at station, then confirm them together.
           </p>
         </div>
         <div className="flex gap-2">
           <Button
-            variant={scannerOpen ? "ghost" : "navy"}
+            variant="navy"
             onClick={() => {
               setFeedback(null);
-              setScannerOpen((open) => !open);
+              setScannerOpen(true);
             }}
           >
-            <Camera size={16} /> {scannerOpen ? "Stop Scanner" : "Scan Parcel QR"}
+            <Camera size={16} /> Scan Parcel QR
           </Button>
         </div>
       </header>
@@ -194,37 +145,23 @@ export default function PickupSheetPage() {
             <span className="text-xs text-slate-400">Eligible parcels: {availableShipments.length}</span>
           </div>
 
-          {scannerOpen ? (
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              className="aspect-video w-full rounded-lg bg-slate-950 object-cover"
-            />
-          ) : (
-            <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
-              Start the scanner and allow camera access.
-            </div>
-          )}
+          <p className="text-xs text-slate-500">
+            Click the button below to open the QR scanner. Scan multiple parcels, then submit them together.
+          </p>
 
-          <form onSubmit={handleManualScan} className="flex gap-2">
-            <input
-              value={manualCode}
-              onChange={(event) => setManualCode(event.target.value)}
-              placeholder="Or enter a tracking ID"
-              aria-label="Tracking ID"
-              className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#F4C430]"
-            />
-            <Button type="submit" variant="outline" disabled={!manualCode.trim()}>
-              <Plus size={15} /> Add
-            </Button>
-          </form>
+          <Button
+            variant="navy"
+            onClick={() => setScannerOpen(true)}
+            className="w-full"
+          >
+            <Camera size={16} className="mr-2" /> Open QR Scanner
+          </Button>
         </Card>
 
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
-              <h3 className="font-semibold text-[#0A2342]">Parcels Awaiting Pickup</h3>
+              <h3 className="font-semibold text-[#0A2342]">Parcels In Transit</h3>
               <p className="mt-1 text-xs text-slate-400">{filteredShipments.length} shown</p>
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-2">
@@ -233,7 +170,7 @@ export default function PickupSheetPage() {
                 value={searchValue}
                 onChange={(event) => setSearchValue(event.target.value)}
                 placeholder="Search parcels"
-                aria-label="Search parcels awaiting pickup"
+                aria-label="Search parcels in transit"
                 className="w-36 text-xs outline-none"
               />
             </div>
@@ -241,7 +178,7 @@ export default function PickupSheetPage() {
 
           <div className="max-h-80 space-y-2 overflow-y-auto">
             {filteredShipments.length === 0 ? (
-              <p className="py-8 text-center text-sm text-slate-400">No parcels are awaiting pickup.</p>
+              <p className="py-8 text-center text-sm text-slate-400">No parcels are in transit.</p>
             ) : filteredShipments.map((shipment) => {
               const alreadyScanned = scannedIds.includes(shipment.id);
               return (
@@ -256,7 +193,7 @@ export default function PickupSheetPage() {
                     type="button"
                     variant="outline"
                     disabled={alreadyScanned}
-                    onClick={() => addScannedParcel(shipment.id)}
+                    onClick={() => addScannedParcel(String(shipment.id))}
                     className="shrink-0 px-3 py-2 text-xs"
                   >
                     {alreadyScanned ? <Check size={14} /> : <Plus size={14} />}
@@ -273,14 +210,14 @@ export default function PickupSheetPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
             <h3 className="font-semibold text-[#0A2342]">Scanned Parcels</h3>
-            <p className="mt-1 text-xs text-slate-400">{scannedShipments.length} ready to mark picked up</p>
+            <p className="mt-1 text-xs text-slate-400">{scannedShipments.length} ready to mark arrived</p>
           </div>
           <Button
             variant="navy"
             disabled={scannedIds.length === 0 || submitting}
             onClick={handleConfirmPickup}
           >
-            {submitting ? "Updating..." : `Mark ${scannedIds.length} Picked Up`}
+            Submit All ({scannedIds.length})
           </Button>
         </div>
 
@@ -322,6 +259,12 @@ export default function PickupSheetPage() {
           </div>
         )}
       </Card>
+
+      <QRScannerModal
+        isOpen={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanComplete={handleScanComplete}
+      />
     </div>
   );
 }

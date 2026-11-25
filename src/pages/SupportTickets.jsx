@@ -115,7 +115,7 @@ export default function SupportTickets() {
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setShowModal(false)} />
-          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp">
+          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
               <h3 className="font-display font-bold text-[#0A2342] text-[16px] flex items-center gap-2">
                 <LifeBuoy size={18} style={{ color: YELLOW }} /> Open Support Ticket
@@ -151,7 +151,7 @@ export default function SupportTickets() {
       {selectedTicket && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setSelectedTicket(null)} />
-          <Card className="p-6 w-full max-w-lg relative z-10 animate-fadeUp space-y-4">
+          <Card className="p-6 w-full max-w-lg relative z-10 animate-fadeUp space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-display font-bold text-[#0A2342] text-[16px]">{selectedTicket.id}: {selectedTicket.subj}</h3>

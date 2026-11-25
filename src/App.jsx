@@ -138,7 +138,7 @@ function PortalLayout() {
               <div className="skeleton h-72 rounded-2xl" />
             </div>
           ) : (
-            <div key={page} className="animate-fadeUp">
+            <div key={page}>
               <Outlet />
             </div>
           )}

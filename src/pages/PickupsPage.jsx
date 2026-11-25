@@ -105,7 +105,7 @@ export default function PickupsPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setShowModal(false)} />
-          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp">
+          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
               <h3 className="font-display font-bold text-[#0A2342] text-[16px]">Schedule Pickup</h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">

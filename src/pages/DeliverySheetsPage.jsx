@@ -1289,7 +1289,7 @@ export default function DeliverySheetsPage({ go, initialMode = "list" }) {
         {historyOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
             <button type="button" className="absolute inset-0" aria-label="Close history" onClick={() => setHistoryOpen(false)} />
-            <Card className="relative z-10 w-full max-w-lg p-5">
+            <Card className="relative z-10 w-full max-w-lg p-5 max-h-[85vh] overflow-y-auto">
               <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-semibold text-[#0A2342]">Delivery Sheet History</h3>
                 <button type="button" onClick={() => setHistoryOpen(false)} aria-label="Close history">

@@ -81,6 +81,14 @@ export const PICKUP_WAITING_STATUSES = [
   "Pending Pickup",
 ];
 
+export const ARRIVAL_WAITING_STATUSES = [
+  "Picked Up",
+  "Received at Origin Hub",
+  "In Transit",
+  "Arrived at Transit Hub",
+  "Departed from Transit Hub",
+];
+
 export const ACTIVE_SHIPMENT_STATUSES = [
   "Picked Up",
   "Received at Origin Hub",
@@ -341,11 +349,19 @@ export const findShipmentByQuery = (shipments, query) => {
   const exactCN = list.find((s) => String(s.id || "").toLowerCase() === q);
   if (exactCN) return exactCN;
 
-  // External store ID (e.g. Shopify order/tracking ID imported via bulk CSV)
+  // External store ID (e.g. Shopify order ID imported via bulk CSV)
   const extRef = list.find((s) =>
     String(s.externalRef || s.shopifyId || "").toLowerCase() === q
   );
   if (extRef) return extRef;
+
+  // Check if query is part of merged ID (e.g., "FLX93820123-#1001" or just "1001")
+  const mergedMatch = list.find((s) => {
+    const id = String(s.id || "").toLowerCase();
+    // Check if the query is contained in the ID (for merged IDs like FLX93820123-1001)
+    return id.includes(q) || q.includes(id);
+  });
+  if (mergedMatch) return mergedMatch;
 
   const digits = q.replace(/\D/g, "");
   if (digits.length >= 7) {
@@ -405,7 +421,7 @@ export const ADMIN_NAV_SECTIONS = [
       { id: "create", label: "Create Booking", icon: "PackagePlus" },
       { id: "area", label: "Area", icon: "ClipboardList" },
       { id: "reasons", label: "Reasons List", icon: "FileText" },
-      { id: "pickup-sheet", label: "Pickup Sheet", icon: "ClipboardList" },
+      { id: "pickup-sheet", label: "Arrival Sheet", icon: "ClipboardList" },
       { id: "track", label: "Parcel Status Tracking", icon: "PackageSearch" },
       { id: "pickups", label: "Dispatch Drivers & Pickups", icon: "Truck" },
     ],
@@ -453,6 +469,7 @@ export const CLIENT_NAV_SECTIONS = [
       { id: "bulk", label: "+ Bulk CSV Booking", icon: "Boxes" },
       { id: "area", label: "Area", icon: "ClipboardList" },
       { id: "reasons", label: "Reasons List", icon: "FileText" },
+      { id: "pickup-sheet", label: "Arrival Sheet", icon: "ClipboardList" },
       { id: "track", label: "Parcel Status Tracking", icon: "PackageSearch" },
       { id: "pickups", label: "Request Warehouse Pickup", icon: "Truck" },
     ],
@@ -485,6 +502,7 @@ export const PAGE_TITLES = {
   reasons: ["Reasons List", "Select reasons list to change — Delivery exception reasons"],
   track: ["Track Shipment", "Live tracking & timeline"],
   pickups: ["Pickup Requests", "Driver pickup dispatches"],
+  "pickup-sheet": ["Arrival Sheet", "Scan parcels and confirm arrival at station"],
   customers: ["Shippers & Merchants", "Manage shipper accounts & credentials"],
   cod: ["COD Management", "Cash-on-delivery collections and settlements"],
   invoices: ["Invoices", "Billing history and payment records"],

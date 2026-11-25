@@ -252,7 +252,7 @@ export default function ThirdPartyRidersPage() {
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
           <button type="button" className="absolute inset-0" aria-label="Close rider dialog" onClick={closeForm} />
-          <Card className="relative z-10 w-full max-w-xl space-y-5 p-6">
+          <Card className="relative z-10 w-full max-w-xl space-y-5 p-6 max-h-[85vh] overflow-y-auto">
             <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
                 <h2 className="font-display text-lg font-bold text-[#0A2342]">

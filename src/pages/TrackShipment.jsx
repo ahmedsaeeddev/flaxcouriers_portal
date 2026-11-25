@@ -188,7 +188,7 @@ export default function TrackShipment() {
                   <span className="font-display font-bold text-[#0A2342] text-lg">{foundShipment.id}</span>
                   {(foundShipment.externalRef || foundShipment.shopifyId) && (
                     <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-                      Shopify: {foundShipment.externalRef || foundShipment.shopifyId}
+                      Shopify Order ID: {foundShipment.externalRef || foundShipment.shopifyId}
                     </span>
                   )}
                   <button onClick={() => handleCopy(foundShipment.id)} className="text-slate-400 hover:text-[#0A2342]">

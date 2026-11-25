@@ -116,9 +116,9 @@ export default function CommandPalette() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-start justify-center pt-[12vh] px-4" onClick={() => setOpen(false)}>
+    <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center pt-[12vh] px-4" onClick={() => setOpen(false)}>
       <div
-        className="w-full max-w-xl bg-white dark:bg-[#0d223f] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden animate-fadeUp"
+        className="w-full max-w-xl bg-white dark:bg-[#0d223f] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden animate-fadeUp max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100 dark:border-white/10">

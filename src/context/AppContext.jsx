@@ -14,6 +14,7 @@ import { auth, db } from "../firebase/firebase";
 import { seedInitialData } from "../firebase/firestoreHelpers";
 import {
   ACTIVE_SHIPMENT_STATUSES,
+  ARRIVAL_WAITING_STATUSES,
   DELIVERY_ASSIGNABLE_STATUSES,
   DELIVERY_SHEET_OUTCOME_STATUSES,
   FAILED_DELIVERY_STATUSES,
@@ -423,7 +424,10 @@ export function AppProvider({ children }) {
     const dateStr = getFormattedDate();
     for (let index = 0; index < shipmentList.length; index++) {
       const s = shipmentList[index];
-      const trackingId = "FLX93820" + Math.floor(1000 + Math.random() * 8999 + index);
+      const autoId = "FLX93820" + Math.floor(1000 + Math.random() * 8999 + index);
+      // Merge Shopify Order ID with auto-generated ID if provided
+      const shopifyId = s.externalRef || s.shopifyId || "";
+      const trackingId = shopifyId ? `${autoId}-${shopifyId.replace(/^#/, "")}` : autoId;
       const codVal = parseInt(s.codAmount) || 0;
       const newItem = {
         id: trackingId,
@@ -442,6 +446,7 @@ export function AppProvider({ children }) {
         senderAddress: s.senderAddress || "",
         receiverPhone: s.receiverPhone || "",
         receiverAddress: s.receiverAddress || "",
+        receiverArea: s.area || "",
         weight: parseFloat(s.weight) || 1.0,
         pieces: parseInt(s.pieces) || 1,
         parcelType: s.parcelType || "Parcel",
@@ -535,6 +540,52 @@ export function AppProvider({ children }) {
 
     await batch.commit();
     await addNotification(`Marked ${selectedShipments.length} parcel${selectedShipments.length === 1 ? "" : "s"} as picked up.`);
+    return selectedShipments.length;
+  };
+
+  const markShipmentsArrived = async (shipmentIds = []) => {
+    const uniqueIds = [...new Set(shipmentIds)];
+    if (uniqueIds.length === 0) return 0;
+
+    const selectedShipments = uniqueIds.map((id) => {
+      const shipment = shipments.find((item) => item.id === id);
+      if (!shipment || !shipment._docId) {
+        throw new Error(`Shipment ${id} could not be found.`);
+      }
+      if (!ARRIVAL_WAITING_STATUSES.includes(shipment.status) || shipment.arrivalStatus === "Arrived at Destination Hub") {
+        throw new Error(`Shipment ${id} is not eligible for arrival.`);
+      }
+      return shipment;
+    });
+
+    const nowStr = `${getFormattedDate()}, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    const batch = writeBatch(db);
+
+    selectedShipments.forEach((shipment) => {
+      let foundArrivalEvent = false;
+      const timeline = (shipment.timeline || []).map((event) => {
+        if (event.t === "Arrived at Destination Hub") {
+          foundArrivalEvent = true;
+          return { ...event, d: nowStr, done: true };
+        }
+        return event;
+      });
+
+      if (!foundArrivalEvent) {
+        timeline.push({ t: "Arrived at Destination Hub", d: nowStr, done: true });
+      }
+
+      batch.update(doc(db, "shipments", shipment._docId), {
+        status: "Arrived at Destination Hub",
+        statusProgress: Math.max(getShipmentProgress(shipment), getShipmentStatusProgress("Arrived at Destination Hub")),
+        arrivalStatus: "Arrived at Destination Hub",
+        arrivedAt: Date.now(),
+        timeline,
+      });
+    });
+
+    await batch.commit();
+    await addNotification(`Marked ${selectedShipments.length} parcel${selectedShipments.length === 1 ? "" : "s"} as arrived at station.`);
     return selectedShipments.length;
   };
 
@@ -1182,6 +1233,7 @@ export function AppProvider({ children }) {
         addBulkShipments,
         updateShipmentStatus,
         markShipmentsPickedUp,
+        markShipmentsArrived,
         deleteShipment,
         addThirdPartyRider,
         updateThirdPartyRider,

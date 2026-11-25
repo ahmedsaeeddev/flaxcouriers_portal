@@ -254,7 +254,7 @@ function ClientInvoices() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="invoice-request-title"
-            className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+            className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-xl max-h-[85vh] overflow-y-auto"
           >
             <h2 id="invoice-request-title" className="text-base font-semibold text-slate-800">
               Request an invoice
@@ -286,7 +286,7 @@ function ClientInvoices() {
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setShowModal(false)} />
-          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp">
+          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
               <h3 className="font-display font-bold text-[#0A2342] text-[16px] flex items-center gap-2">
                 <FileText size={18} style={{ color: YELLOW }} /> Generate Invoice

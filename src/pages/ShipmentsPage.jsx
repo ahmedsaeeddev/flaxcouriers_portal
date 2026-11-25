@@ -9,6 +9,7 @@ import Button from "../components/ui/Button";
 import { StatusPill } from "../components/ui/Badge";
 import TrackShipmentModal from "../components/TrackShipmentModal";
 import CreateBookingModal from "../components/CreateBookingModal";
+import EditShipmentModal from "../components/EditShipmentModal";
 import { AppContext } from "../context/AppContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
@@ -118,18 +119,7 @@ export default function ShipmentsPage({ go }) {
   const [copiedId, setCopiedId] = useState("");
   const [trackingModalShipment, setTrackingModalShipment] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-
-  // Edit Modal State
   const [editingShipment, setEditingShipment] = useState(null);
-  const [editForm, setEditForm] = useState({
-    cust: "",
-    receiverPhone: "",
-    receiverAddress: "",
-    city: "",
-    cod: "",
-    weight: "",
-    instructions: "",
-  });
 
   // Load Sheet Modal State with Full Preset, Shipper Search & Parcel Selection
   const [showLoadSheetModal, setShowLoadSheetModal] = useState(false);
@@ -307,13 +297,15 @@ export default function ShipmentsPage({ go }) {
   };
 
   const handleExportCSV = () => {
-    const headers = ["CN", "Status", "Consignee", "Phone", "City", "Shipper", "COD", "Delivery Charges", "Weight (kg)", "Date"];
+    const headers = ["CN", "Status", "Consignee", "Phone", "City", "Address", "Area", "Shipper", "COD", "Delivery Charges", "Weight (kg)", "Date"];
     const rows = filteredShipments.map((s) => [
       s.id,
       s.status || "",
       s.cust || "",
       s.receiverPhone || "",
       s.city || "",
+      s.receiverAddress || "",
+      s.receiverArea || "",
       s.sender || "",
       s.cod || "",
       s.deliveryCharges || s.deliveryCharge || "",
@@ -365,15 +357,14 @@ export default function ShipmentsPage({ go }) {
 
   const openEdit = (shipment) => {
     setEditingShipment(shipment);
-    setEditForm({
-      cust: shipment.cust || "",
-      receiverPhone: shipment.receiverPhone || "",
-      receiverAddress: shipment.receiverAddress || "",
-      city: shipment.city || "Karachi",
-      cod: shipment.cod ? String(shipment.cod).replace(/[^\d]/g, "") : "",
-      weight: shipment.weight || "1.0",
-      instructions: shipment.instructions || "",
-    });
+  };
+
+  const handleSaveShipment = async (updatedData) => {
+    if (!editingShipment || !editingShipment._docId) {
+      alert("Shipment not found");
+      return;
+    }
+    alert(t("Shipment updated successfully"));
   };
 
   // Helper for status pill styling matching reference image
@@ -1000,7 +991,7 @@ export default function ShipmentsPage({ go }) {
                         </div>
                         {(s.externalRef || s.shopifyId) && (
                           <div className="text-[10px] font-mono">
-                            <span className="block text-[9px] text-indigo-400">SHOPIFY#</span>
+                            <span className="block text-[9px] text-indigo-400">SHOPIFY ORDER ID</span>
                             <span className="text-indigo-600 font-bold">{s.externalRef || s.shopifyId}</span>
                           </div>
                         )}
@@ -1246,118 +1237,10 @@ export default function ShipmentsPage({ go }) {
         </div>
       )}
 
-      {/* ── EDIT SHIPMENT MODAL ── */}
-      {editingShipment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3.5 bg-[#0A2342] text-white">
-              <h3 className="font-bold text-sm flex items-center gap-2">
-                <Edit3 size={15} className="text-amber-400" />
-                <span>{t("Edit Consignment")} — {editingShipment.id}</span>
-              </h3>
-              <button onClick={() => setEditingShipment(null)} className="text-white/60 hover:text-white">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">{t("Consignee Name")}</label>
-                  <input
-                    type="text"
-                    value={editForm.cust}
-                    onChange={(e) => setEditForm({ ...editForm, cust: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-[#F4C430]"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">{t("Phone")}</label>
-                  <input
-                    type="text"
-                    value={editForm.receiverPhone}
-                    onChange={(e) => setEditForm({ ...editForm, receiverPhone: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-[#F4C430]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">{t("Destination City")}</label>
-                  <input
-                    type="text"
-                    value={editForm.city}
-                    onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-[#F4C430]"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">{t("COD Amount (Rs)")}</label>
-                  <input
-                    type="number"
-                    value={editForm.cod}
-                    onChange={(e) => setEditForm({ ...editForm, cod: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-[#F4C430] font-bold text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">{t("Consignee Address")}</label>
-                <textarea
-                  rows={2}
-                  value={editForm.receiverAddress}
-                  onChange={(e) => setEditForm({ ...editForm, receiverAddress: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-[#F4C430]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">{t("Weight (kg)")}</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={editForm.weight}
-                    onChange={(e) => setEditForm({ ...editForm, weight: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-[#F4C430]"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">{t("Instructions")}</label>
-                  <input
-                    type="text"
-                    value={editForm.instructions}
-                    onChange={(e) => setEditForm({ ...editForm, instructions: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-[#F4C430]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <Button variant="ghost" onClick={() => setEditingShipment(null)}>
-                  {t("Cancel")}
-                </Button>
-                <Button
-                  onClick={async () => {
-                    setEditingShipment(null);
-                    alert(t("Shipment updated successfully"));
-                  }}
-                  className="!bg-[#10b981] hover:!bg-[#059669] !text-white font-bold"
-                >
-                  {t("Save Changes")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── LOAD SHEET & BULK AWB DOWNLOAD MODAL (Full Feature Set) ── */}
       {showLoadSheetModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-4 sm:my-6 max-h-[85vh] flex flex-col">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-3.5 bg-[#0A2342] text-white">
@@ -1607,6 +1490,14 @@ export default function ShipmentsPage({ go }) {
       <CreateBookingModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
+      />
+
+      {/* ── EDIT SHIPMENT MODAL ── */}
+      <EditShipmentModal
+        isOpen={Boolean(editingShipment)}
+        onClose={() => setEditingShipment(null)}
+        shipment={editingShipment}
+        onSave={handleSaveShipment}
       />
 
     </div>

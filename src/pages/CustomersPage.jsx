@@ -217,7 +217,7 @@ export default function CustomersPage() {
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => !submitting && setShowAddModal(false)} />
-          <Card className="p-6 w-full max-w-lg relative z-10 animate-fadeUp space-y-4">
+          <Card className="p-6 w-full max-w-lg relative z-10 animate-fadeUp space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-display font-bold text-[#0A2342] text-[17px]">Create Shipper Account</h3>
@@ -285,7 +285,7 @@ export default function CustomersPage() {
       {selectedCust && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setSelectedCust(null)} />
-          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp space-y-4">
+          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-display font-bold text-[#0A2342] text-[16px]">Shipper Account Card</h3>
               <button onClick={() => setSelectedCust(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
@@ -318,7 +318,7 @@ export default function CustomersPage() {
       {editCust && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0" onClick={() => setEditCust(null)} />
-          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp space-y-4">
+          <Card className="p-6 w-full max-w-md relative z-10 animate-fadeUp space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-display font-bold text-[#0A2342] text-[16px]">Edit Shipper Profile</h3>
               <button onClick={() => setEditCust(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
